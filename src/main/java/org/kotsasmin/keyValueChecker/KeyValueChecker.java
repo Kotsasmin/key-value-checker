@@ -130,7 +130,11 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     private void loadConfigValues() {
         reloadConfig();
         translationKeys = getConfig().getStringList("translation-keys");
-        sendDelay = getConfig().getInt("send-delay-ticks", 20);
+        if (getConfig().contains("initial-check-delay-seconds")) {
+            sendDelay = getConfig().getInt("initial-check-delay-seconds", 1) * 20;
+        } else {
+            sendDelay = getConfig().getInt("send-delay-ticks", 20);
+        }
     }
 
     @Override
@@ -190,12 +194,9 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
             return; // Finished checking all keys
         }
 
+        // Place sign above head to guarantee loaded chunk
         Location loc = player.getLocation().clone();
-        int y = loc.getBlockY() - 5;
-        if (y < loc.getWorld().getMinHeight()) {
-            y = loc.getWorld().getMinHeight() + 1;
-        }
-        loc.setY(y);
+        loc.setY(loc.getBlockY() + 2);
         
         Vector3i v3i = new Vector3i(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
 
@@ -231,14 +232,14 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         text.setTag("color", new NBTString("black"));
         text.setTag("has_glowing_text", new NBTByte((byte) 0));
 
-        NBTCompound nbtCompound = new NBTCompound();
-        nbtCompound.setTag("id", new NBTString("minecraft:sign"));
-        nbtCompound.setTag("front_text", text);
-        nbtCompound.setTag("back_text", text);
-        nbtCompound.setTag("is_waxed", new NBTByte((byte) 0));
+        NBTCompound nbt = new NBTCompound();
+        nbt.setTag("id", new NBTString("minecraft:sign"));
+        nbt.setTag("front_text", text);
+        nbt.setTag("back_text", text);
+        nbt.setTag("is_waxed", new NBTByte((byte) 0));
 
-        // 3. Send Block Entity Data
-        WrapperPlayServerBlockEntityData blockEntityData = new WrapperPlayServerBlockEntityData(v3i, BlockEntityTypes.SIGN, nbtCompound);
+        // 3. Send Block Entity Data (NBT) to apply translation components
+        WrapperPlayServerBlockEntityData blockEntityData = new WrapperPlayServerBlockEntityData(v3i, BlockEntityTypes.SIGN, nbt);
         PacketEvents.getAPI().getPlayerManager().sendPacket(player, blockEntityData);
 
         // 4. Send Open Sign Editor
@@ -256,7 +257,25 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                 clearFakeBlock(player, staleData.signLoc);
                 getLogger().warning("[KVC] FLAG: " + player.getName() + " blocked sign update. Possible cheat.");
                 detectedMods.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).add("Blocked check");
-                enforceAction(player, "Blocked check");
+                
+                // Notify admins without kicking
+                String alertFormat = getConfig().getString("admin-alert", "&8[&cKVC&8] &e%player% &7blocked the sign update check.");
+                if (alertFormat != null && !alertFormat.isEmpty()) {
+                    String formattedAlert = alertFormat.replace("%player%", player.getName()).replace("%mod%", "Blocked check");
+                    Component adminAlert = LegacyComponentSerializer.legacyAmpersand().deserialize(formattedAlert);
+                    for (Player p : Bukkit.getOnlinePlayers()) {
+                        if (p.hasPermission("keyvaluechecker.notify")) {
+                            p.sendMessage(adminAlert);
+                        }
+                    }
+                }
+                
+                // Continue to next batch
+                Bukkit.getScheduler().runTask(KeyValueChecker.this, () -> {
+                    if (player.isOnline()) {
+                        runDetectionBatch(player, staleData.startIndex + 4);
+                    }
+                });
             }
         }, 60L);
 

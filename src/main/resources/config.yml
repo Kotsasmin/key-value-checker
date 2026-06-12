@@ -1,4 +1,6 @@
-send-delay-ticks: 20
+# How many seconds to wait after a player joins before checking them?
+# Useful if you use AuthMe/FastLogin to prevent checking before they log in. (Default: 1)
+initial-check-delay-seconds: 1
 translation-keys:
   - "key.anything"
   - "key.meteor-client.open-gui"
