@@ -36,15 +36,43 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 public final class KeyValueChecker extends JavaPlugin implements Listener, CommandExecutor {
 
     private List<String> translationKeys;
     private int sendDelay;
 
-    private final Map<UUID, List<String>> detectedMods = new ConcurrentHashMap<>();
+    private static class PlayerRecord {
+        String playerName;
+        long lastIncidentTime;
+        String lastAction;
+        List<String> detectedMods;
+
+        PlayerRecord(String playerName, long lastIncidentTime, String lastAction, List<String> detectedMods) {
+            this.playerName = playerName;
+            this.lastIncidentTime = lastIncidentTime;
+            this.lastAction = lastAction;
+            this.detectedMods = detectedMods;
+        }
+    }
+
+    private final Map<UUID, PlayerRecord> persistentRecords = new ConcurrentHashMap<>();
+    private File dataFile;
+    private FileConfiguration dataConfig;
     
     private static class CheckData {
         int startIndex;
@@ -66,6 +94,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     public void onEnable() {
         saveDefaultConfig();
         loadConfigValues();
+        loadData();
 
         // Register listener directly to the server's PacketEvents plugin
         PacketEvents.getAPI().getEventManager().registerListener(new PacketListenerAbstract() {
@@ -97,7 +126,9 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                             if (clientText != null && !clientText.isEmpty() && !clientText.equals("fallb") && !clientText.equals(key)) {
                                 flag = true;
                                 detectedMod = key;
-                                detectedMods.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).add(key);
+                                PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "detected", new ArrayList<>()));
+                                if (!record.detectedMods.contains(key)) record.detectedMods.add(key);
+                                record.lastIncidentTime = System.currentTimeMillis();
                                 getLogger().warning("[KVC] FLAG: " + player.getName() + " is using " + key);
                                 break; // Only need to detect one per batch to flag
                             }
@@ -137,7 +168,107 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         }
     }
 
+    private void loadData() {
+        dataFile = new File(getDataFolder(), "data.yml");
+        if (!dataFile.exists()) {
+            try {
+                dataFile.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
+        persistentRecords.clear();
+        if (dataConfig.contains("records")) {
+            for (String uuidStr : dataConfig.getConfigurationSection("records").getKeys(false)) {
+                UUID uuid = UUID.fromString(uuidStr);
+                String name = dataConfig.getString("records." + uuidStr + ".name");
+                long time = dataConfig.getLong("records." + uuidStr + ".time");
+                String action = dataConfig.getString("records." + uuidStr + ".action");
+                List<String> mods = dataConfig.getStringList("records." + uuidStr + ".mods");
+                persistentRecords.put(uuid, new PlayerRecord(name, time, action, mods));
+            }
+        }
+    }
+
+    private void saveData() {
+        dataConfig.set("records", null);
+        for (Map.Entry<UUID, PlayerRecord> entry : persistentRecords.entrySet()) {
+            String path = "records." + entry.getKey().toString();
+            dataConfig.set(path + ".name", entry.getValue().playerName);
+            dataConfig.set(path + ".time", entry.getValue().lastIncidentTime);
+            dataConfig.set(path + ".action", entry.getValue().lastAction);
+            dataConfig.set(path + ".mods", entry.getValue().detectedMods);
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                dataConfig.save(dataFile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private String formatTimeAgo(long timestamp) {
+        long diffSeconds = (System.currentTimeMillis() - timestamp) / 1000;
+        if (diffSeconds < 60) return diffSeconds + " secs ago";
+        if (diffSeconds < 3600) return (diffSeconds / 60) + " mins ago";
+        if (diffSeconds < 86400) return (diffSeconds / 3600) + " hours ago";
+        return (diffSeconds / 86400) + " days ago";
+    }
+
+    private void sendWebhook(Player player, String action, String modsStr) {
+        if (!getConfig().getBoolean("discord-webhook.enabled", false)) return;
+        
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                String url = getConfig().getString("discord-webhook.url", "");
+                if (url.isEmpty()) return;
+                
+                String username = getConfig().getString("discord-webhook.username", "KeyValueChecker");
+                String avatarUrl = getConfig().getString("discord-webhook.avatar-url", "").replace("%player%", player.getName());
+                int color = getConfig().getInt("discord-webhook.embed.color", 16711680);
+                String title = getConfig().getString("discord-webhook.embed.title", "Cheater Detected!");
+                String desc = getConfig().getString("discord-webhook.embed.description", "").replace("%player%", player.getName()).replace("%action%", action).replace("%mods%", modsStr);
+                String footer = getConfig().getString("discord-webhook.embed.footer", "");
+                
+                username = username.replace("\"", "\\\"");
+                avatarUrl = avatarUrl.replace("\"", "\\\"");
+                title = title.replace("\"", "\\\"");
+                desc = desc.replace("\"", "\\\"").replace("\n", "\\n");
+                footer = footer.replace("\"", "\\\"");
+                
+                String payload = "{"
+                    + "\"username\": \"" + username + "\","
+                    + "\"avatar_url\": \"" + avatarUrl + "\","
+                    + "\"embeds\": [{"
+                    + "\"title\": \"" + title + "\","
+                    + "\"description\": \"" + desc + "\","
+                    + "\"color\": " + color + ","
+                    + "\"footer\": {\"text\": \"" + footer + "\"}"
+                    + "}]"
+                    + "}";
+
+                HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+                
+                client.send(request, HttpResponse.BodyHandlers.discarding());
+            } catch (Exception e) {
+                getLogger().warning("[KVC] Failed to send Discord webhook: " + e.getMessage());
+            }
+        });
+    }
+
     @Override
+    public void onDisable() {
+        if (dataFile != null) {
+            saveData();
+        }
+    }
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("kvc-reload")) {
             if (sender.hasPermission("keyvaluechecker.reload")) {
@@ -146,18 +277,24 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                 return true;
             }
         }
-
         if (command.getName().equalsIgnoreCase("kvc-list")) {
             if (sender.hasPermission("keyvaluechecker.list")) {
-                sender.sendMessage("§6--- Detected Mods ---");
-                if (detectedMods.isEmpty()) {
-                    sender.sendMessage("§eNo detections.");
+                if (args.length > 0 && args[0].equalsIgnoreCase("rotate")) {
+                    persistentRecords.clear();
+                    saveData();
+                    sender.sendMessage("§a[KVC] Log history wiped successfully.");
+                    return true;
+                }
+
+                sender.sendMessage("§6--- Detected Mods History ---");
+                if (persistentRecords.isEmpty()) {
+                    sender.sendMessage("§eNo detections on record.");
                 } else {
-                    for (Map.Entry<UUID, List<String>> entry : detectedMods.entrySet()) {
-                        Player p = Bukkit.getPlayer(entry.getKey());
-                        if (p != null) {
-                            sender.sendMessage("§c" + p.getName() + " §7flags: §e" + String.join(", ", entry.getValue()));
-                        }
+                    for (Map.Entry<UUID, PlayerRecord> entry : persistentRecords.entrySet()) {
+                        PlayerRecord rec = entry.getValue();
+                        String timeAgo = formatTimeAgo(rec.lastIncidentTime);
+                        sender.sendMessage("§c" + rec.playerName + " §7[" + timeAgo + "] §8(Last: " + rec.lastAction + ")");
+                        sender.sendMessage("  §7Flags: §e" + String.join(", ", rec.detectedMods));
                     }
                 }
                 return true;
@@ -169,7 +306,6 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        detectedMods.remove(player.getUniqueId());
 
         Bukkit.getScheduler().runTaskLater(this, () -> {
             if (player.isOnline() && !translationKeys.isEmpty()) {
@@ -182,7 +318,6 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        detectedMods.remove(id);
         CheckData check = checkingPlayers.remove(id);
         if (check != null) {
             check.timeoutTask.cancel();
@@ -256,11 +391,17 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
             if (staleData != null) {
                 clearFakeBlock(player, staleData.signLoc);
                 getLogger().warning("[KVC] FLAG: " + player.getName() + " blocked sign update. Possible cheat.");
-                detectedMods.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).add("Blocked check");
                 
                 if (getConfig().getBoolean("kick-on-blocked-check", false)) {
                     enforceAction(player, "Blocked check");
                 } else {
+                    PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "Blocked check", new ArrayList<>()));
+                    if (!record.detectedMods.contains("Blocked check")) record.detectedMods.add("Blocked check");
+                    record.lastIncidentTime = System.currentTimeMillis();
+                    record.lastAction = "Blocked check";
+                    saveData();
+                    sendWebhook(player, "Blocked check", "Blocked sign update");
+
                     // Notify admins without kicking
                     String alertFormat = getConfig().getString("admin-alert", "&8[&cKVC&8] &e%player% &7blocked the sign update check.");
                     if (alertFormat != null && !alertFormat.isEmpty()) {
@@ -301,7 +442,14 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         Bukkit.getScheduler().runTaskLater(this, () -> {
             if (!player.isOnline()) return;
             
-            String action = getConfig().getString("action.type", "kick").toLowerCase();
+            PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "Kicked", new ArrayList<>()));
+            record.lastAction = "Kicked";
+            record.lastIncidentTime = System.currentTimeMillis();
+            saveData();
+
+            sendWebhook(player, "Kicked", String.join(", ", record.detectedMods));
+
+            String actionType = getConfig().getString("action.type", "kick");
             List<String> content = getConfig().getStringList("action.content");
             
             if (content == null || content.isEmpty()) return;
@@ -315,9 +463,9 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                 finalMessage = finalMessage.append(LegacyComponentSerializer.legacyAmpersand().deserialize(formatted));
             }
 
-            if (action.equals("message")) {
+            if (actionType.equals("message")) {
                 player.sendMessage(finalMessage);
-            } else if (action.equals("command")) {
+            } else if (actionType.equals("command")) {
                 for (String line : content) {
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(), line.replace("%mod%", modName).replace("%player%", player.getName()));
                 }

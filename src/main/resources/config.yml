@@ -20,3 +20,14 @@ action:
   content:
     - "&cYou have been kicked for using disallowed modifications!"
 admin-alert: "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications."
+
+discord-webhook:
+  enabled: false
+  url: "https://discord.com/api/hahahahahahahahahahaha"
+  username: "KeyValueChecker"
+  avatar-url: "https://minotar.net/helm/%player%/256.png"
+  embed:
+    color: 16711680 # Red
+    title: "Cheater Detected!"
+    description: "**Player:** %player%\n**Action:** %action%\n**Mods:** %mods%"
+    footer: "KeyValueChecker Security System"
