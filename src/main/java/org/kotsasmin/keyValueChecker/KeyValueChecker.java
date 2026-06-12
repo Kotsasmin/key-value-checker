@@ -258,24 +258,28 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                 getLogger().warning("[KVC] FLAG: " + player.getName() + " blocked sign update. Possible cheat.");
                 detectedMods.computeIfAbsent(player.getUniqueId(), k -> new ArrayList<>()).add("Blocked check");
                 
-                // Notify admins without kicking
-                String alertFormat = getConfig().getString("admin-alert", "&8[&cKVC&8] &e%player% &7blocked the sign update check.");
-                if (alertFormat != null && !alertFormat.isEmpty()) {
-                    String formattedAlert = alertFormat.replace("%player%", player.getName()).replace("%mod%", "Blocked check");
-                    Component adminAlert = LegacyComponentSerializer.legacyAmpersand().deserialize(formattedAlert);
-                    for (Player p : Bukkit.getOnlinePlayers()) {
-                        if (p.hasPermission("keyvaluechecker.notify")) {
-                            p.sendMessage(adminAlert);
+                if (getConfig().getBoolean("kick-on-blocked-check", false)) {
+                    enforceAction(player, "Blocked check");
+                } else {
+                    // Notify admins without kicking
+                    String alertFormat = getConfig().getString("admin-alert", "&8[&cKVC&8] &e%player% &7blocked the sign update check.");
+                    if (alertFormat != null && !alertFormat.isEmpty()) {
+                        String formattedAlert = alertFormat.replace("%player%", player.getName()).replace("%mod%", "Blocked check");
+                        Component adminAlert = LegacyComponentSerializer.legacyAmpersand().deserialize(formattedAlert);
+                        for (Player p : Bukkit.getOnlinePlayers()) {
+                            if (p.hasPermission("keyvaluechecker.notify")) {
+                                p.sendMessage(adminAlert);
+                            }
                         }
                     }
+                    
+                    // Continue to next batch
+                    Bukkit.getScheduler().runTask(KeyValueChecker.this, () -> {
+                        if (player.isOnline()) {
+                            runDetectionBatch(player, staleData.startIndex + 4);
+                        }
+                    });
                 }
-                
-                // Continue to next batch
-                Bukkit.getScheduler().runTask(KeyValueChecker.this, () -> {
-                    if (player.isOnline()) {
-                        runDetectionBatch(player, staleData.startIndex + 4);
-                    }
-                });
             }
         }, 60L);
 

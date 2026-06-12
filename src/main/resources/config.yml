@@ -1,6 +1,5 @@
-# How many seconds to wait after a player joins before checking them?
-# Useful if you use AuthMe/FastLogin to prevent checking before they log in. (Default: 1)
-initial-check-delay-seconds: 1
+initial-check-delay-seconds: 2
+kick-on-blocked-check: false
 translation-keys:
   - "key.anything"
   - "key.meteor-client.open-gui"
@@ -16,10 +15,8 @@ translation-keys:
   - "jsmacrosce.close"
   - "option.moremousetweaks.matching"
   - "oinventoryprofiles.common.gui.config.reset"
-
 action:
   type: "kick"
   content:
     - "&cYou have been kicked for using disallowed modifications!"
-
 admin-alert: "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications."
