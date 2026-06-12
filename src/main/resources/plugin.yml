@@ -1,0 +1,20 @@
+name: key-value-checker
+version: '${version}'
+
+main: org.kotsasmin.keyValueChecker.KeyValueChecker
+api-version: '1.21'
+load: POSTWORLD
+depend: [packetevents]
+
+commands:
+  kvc-reload:
+    description: Reloads the KeyValueChecker config
+    permission: keyvaluechecker.reload
+  kvc-list:
+    description: Lists all players currently detected with mods
+    permission: keyvaluechecker.list
+
+permissions:
+  keyvaluechecker.notify:
+    description: Allows admins to see in-game alerts when a player is detected with a disallowed mod.
+    default: op

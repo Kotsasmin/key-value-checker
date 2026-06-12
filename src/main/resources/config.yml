@@ -1,0 +1,23 @@
+send-delay-ticks: 20
+translation-keys:
+  - "key.anything"
+  - "key.meteor-client.open-gui"
+  - "key.soundboard.open_config"
+  - "key.autototem.toggle"
+  - "key.smartoffhand.totem_swap"
+  - "key.invmove.category.general"
+  - "itemscroller.config.generic.name.carpetCtrlQCraftingEnabledOnServer"
+  - "key.healthindicators.renderingEnabled"
+  - "key.freecam.toggle"
+  - "net.clayborn.accurateblockplacement.togglevanillaplacement"
+  - "text.globalmacros.title"
+  - "jsmacrosce.close"
+  - "option.moremousetweaks.matching"
+  - "oinventoryprofiles.common.gui.config.reset"
+
+action:
+  type: "kick"
+  content:
+    - "&cYou have been kicked for using disallowed modifications!"
+
+admin-alert: "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications."
