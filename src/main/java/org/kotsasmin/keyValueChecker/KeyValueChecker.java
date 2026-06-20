@@ -16,6 +16,7 @@ import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientUp
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockChange;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockEntityData;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerCloseWindow;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerOpenWindow;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerOpenSignEditor;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -133,9 +134,6 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                                 break; // Only need to detect one per batch to flag
                             }
                         }
-
-                        // Remove the fake block we created
-                        clearFakeBlock(player, check.signLoc);
 
                         if (flag) {
                             enforceAction(player, detectedMod);
@@ -331,7 +329,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
 
         // Place sign above head to guarantee loaded chunk
         Location loc = player.getLocation().clone();
-        loc.setY(loc.getBlockY() + 2);
+        loc.setY(0);
         
         Vector3i v3i = new Vector3i(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
 
@@ -381,15 +379,21 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         WrapperPlayServerOpenSignEditor openSign = new WrapperPlayServerOpenSignEditor(v3i, true);
         PacketEvents.getAPI().getPlayerManager().sendPacket(player, openSign);
 
-        // 5. Instantly Force Close Window (Forces client to send UPDATE_SIGN back without seeing GUI)
-        WrapperPlayServerCloseWindow closeWindow = new WrapperPlayServerCloseWindow(0);
+        // 5. Send a fake container window to force the client to replace the sign screen, triggering UPDATE_SIGN silently
+        WrapperPlayServerOpenWindow openWindow = new WrapperPlayServerOpenWindow(1, 0, Component.empty());
+        PacketEvents.getAPI().getPlayerManager().sendPacket(player, openWindow);
+
+        // 6. Instantly close the fake window
+        WrapperPlayServerCloseWindow closeWindow = new WrapperPlayServerCloseWindow(1);
         PacketEvents.getAPI().getPlayerManager().sendPacket(player, closeWindow);
+
+        // 7. Instantly restore the block
+        clearFakeBlock(player, v3i);
 
         // Safety timeout
         BukkitTask timeoutTask = Bukkit.getScheduler().runTaskLater(this, () -> {
             CheckData staleData = checkingPlayers.remove(player.getUniqueId());
             if (staleData != null) {
-                clearFakeBlock(player, staleData.signLoc);
                 getLogger().warning("[KVC] FLAG: " + player.getName() + " blocked sign update. Possible cheat.");
                 
                 if (getConfig().getBoolean("kick-on-blocked-check", false)) {
@@ -428,14 +432,12 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     }
 
     private void clearFakeBlock(Player player, Vector3i loc) {
-        Bukkit.getScheduler().runTask(this, () -> {
-            if (player.isOnline()) {
-                Location bukkitLoc = new Location(player.getWorld(), loc.getX(), loc.getY(), loc.getZ());
-                int globalId = WrappedBlockState.getByString(player.getWorld().getBlockAt(bukkitLoc).getBlockData().getAsString()).getGlobalId();
-                WrapperPlayServerBlockChange restore = new WrapperPlayServerBlockChange(loc, globalId);
-                PacketEvents.getAPI().getPlayerManager().sendPacket(player, restore);
-            }
-        });
+        if (player.isOnline()) {
+            Location bukkitLoc = new Location(player.getWorld(), loc.getX(), loc.getY(), loc.getZ());
+            int globalId = WrappedBlockState.getByString(player.getWorld().getBlockAt(bukkitLoc).getBlockData().getAsString()).getGlobalId();
+            WrapperPlayServerBlockChange restore = new WrapperPlayServerBlockChange(loc, globalId);
+            PacketEvents.getAPI().getPlayerManager().sendPacket(player, restore);
+        }
     }
 
     private void enforceAction(Player player, String modName) {
