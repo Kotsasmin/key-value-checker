@@ -15,19 +15,45 @@ translation-keys:
   - "jsmacrosce.close"
   - "option.moremousetweaks.matching"
   - "oinventoryprofiles.common.gui.config.reset"
-action:
-  type: "kick"
-  content:
-    - "&cYou have been kicked for using disallowed modifications!"
-admin-alert: "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications."
+  - "gui.xaero_minimap"
+  - "gui.xaero_open_map"
+  - "cracker.enabled" # Generic Seed Cracker (SeedCrackerX)
+  - "generator.seedfindermod.seed_finder_world" # Seed Cracker 1.20.1
+  - "text.autoconfig.chestesp.option.enable"
+  - "liquidbounce.module.killaura.name"
+  - "key.category.customfov.general"
+  - "key.tweakeroo.freecam"
+  - "xray.config.toggle"
+  - "key.killaura"
+  - "key.autofish.open_gui"
+  - "key.lumina.open_click_gui"
+  - "key.autoswitch.toggle"
+  - "bleachhack.module.killaura"
+  - "emc.module.killaura.name"
+  - "coffee.module.killaura.name"
+  - "key.wdl.startStop"
+  - "autoclicker-fabric.hud.holding"
+  - "key.auto-clicker_.toggle"
 
 discord-webhook:
-  enabled: false
-  url: "https://discord.com/api/hahahahahahahahahahaha"
-  username: "KeyValueChecker"
+  enabled: true
+  url: "https://discord.com/api/webhooks/1515057319220871251/jJDMjkVdHcTWSm8-XsZQiNMA0q8KM6KskHtNvnBLpQPYQdL_6ShrKRlpV2tyiMcgXu3h"
+  username: "Na enas malakas:"
   avatar-url: "https://minotar.net/helm/%player%/256.png"
   embed:
     color: 16711680 # Red
-    title: "Cheater Detected!"
+    title: "Malakas Detected!"
     description: "**Player:** %player%\n**Action:** %action%\n**Mods:** %mods%"
-    footer: "KeyValueChecker Security System"
+    footer: "Key Value Checker Security System by Kotsasmin"
+
+action:
+  type: "kick"
+  content:
+    - "&#FF0000&lD&#F00000&lY&#E10000&lN&#D20000&lA&#C40000&lM&#B50000&lI&#A60000&lC&#970000&lM&#880000&lC"
+    - ""
+    - "&cʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ ᴋɪᴄᴋᴇᴅ ꜰᴏʀ ᴜѕɪɴɢ ᴅɪѕᴀʟʟᴏᴡᴇᴅ ᴍᴏᴅѕ!"
+    - "&cʀᴇᴍᴏᴠᴇ ᴛʜᴇ ᴅɪѕᴀʟʟᴏᴡᴇᴅ ᴍᴏᴅѕ ᴛᴏ ᴘʟᴀʏ ᴀᴛ ᴏᴜʀ ѕᴇʀᴠᴇʀ."
+    - ""
+    - "&7(ᴇxᴀᴍᴘʟᴇ: ʜᴀᴄᴋᴇᴅ ᴄʟɪᴇɴᴛ, ꜰʀᴇᴇᴄᴀᴍ, ᴀᴜᴛᴏᴛᴏᴛᴇᴍ, ѕᴍᴀʀᴛᴏꜰꜰʜᴀɴᴅ, ʜᴇᴀʟᴛʜɪɴᴅɪᴄᴀᴛᴏʀѕ, ᴍᴀᴄʀᴏѕ , ᴍᴀᴘꜱ ᴀɴᴅ ᴍᴏʀᴇ)"
+
+admin-alert: "&8[&cDYMC&8] &e%player% &7tried to join with disallowed modifications."

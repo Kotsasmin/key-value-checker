@@ -93,7 +93,6 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
 
     @Override
     public void onEnable() {
-        saveDefaultConfig();
         loadConfigValues();
         loadData();
 
