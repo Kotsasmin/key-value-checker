@@ -305,6 +305,11 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
+        if (isBedrockPlayer(player.getUniqueId())) {
+            getLogger().info("[KVC] Skipped check for Bedrock player: " + player.getName());
+            return;
+        }
+
         Bukkit.getScheduler().runTaskLater(this, () -> {
             if (player.isOnline() && !translationKeys.isEmpty()) {
                 getLogger().info("[KVC] Starting check for player: " + player.getName());
@@ -320,6 +325,27 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         if (check != null) {
             check.timeoutTask.cancel();
         }
+    }
+
+    private boolean isBedrockPlayer(UUID uuid) {
+        try {
+            Class<?> floodgateApiClass = Class.forName("org.geysermc.floodgate.api.FloodgateApi");
+            Object api = floodgateApiClass.getMethod("getInstance").invoke(null);
+            if ((boolean) floodgateApiClass.getMethod("isFloodgatePlayer", UUID.class).invoke(api, uuid)) {
+                return true;
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            Class<?> geyserApiClass = Class.forName("org.geysermc.geyser.api.GeyserApi");
+            Object api = geyserApiClass.getMethod("api").invoke(null);
+            if ((boolean) geyserApiClass.getMethod("isBedrockPlayer", UUID.class).invoke(api, uuid)) {
+                return true;
+            }
+        } catch (Exception ignored) {}
+
+        // Fallback check for default Floodgate UUID format
+        return uuid.toString().startsWith("00000000-0000-0000-");
     }
 
     private void runDetectionBatch(Player player, int startIndex) {
