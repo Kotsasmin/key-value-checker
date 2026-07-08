@@ -23,6 +23,7 @@ admin-alert: "&8[&cKVC&8] &e%player% &7tried to join with disallowed modificatio
 
 discord-webhook:
   enabled: false
+  send-on-blocked-check: false
   url: "https://discord.com/api/hahahahahahahahahahaha"
   username: "KeyValueChecker"
   avatar-url: "https://minotar.net/helm/%player%/256.png"

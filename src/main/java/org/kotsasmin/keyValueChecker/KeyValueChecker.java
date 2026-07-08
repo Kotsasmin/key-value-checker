@@ -561,7 +561,9 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                     record.lastIncidentTime = System.currentTimeMillis();
                     record.lastAction = "Blocked check";
                     saveData();
-                    sendWebhook(player, "Blocked check", "Blocked sign update");
+                    if (getConfig().getBoolean("discord-webhook.send-on-blocked-check", false)) {
+                        sendWebhook(player, "Blocked check", "Blocked sign update");
+                    }
 
                     // Notify admins without kicking
                     String alertFormat = getConfig().getString("admin-alert", "&8[&cKVC&8] &e%player% &7blocked the sign update check.");
@@ -606,7 +608,9 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
             record.lastIncidentTime = System.currentTimeMillis();
             saveData();
 
-            sendWebhook(player, "Kicked", String.join(", ", record.detectedMods));
+            if (!"Blocked check".equals(modName) || getConfig().getBoolean("discord-webhook.send-on-blocked-check", false)) {
+                sendWebhook(player, "Kicked", String.join(", ", record.detectedMods));
+            }
 
             String actionType = getConfig().getString("action.type", "kick");
             List<String> content = getConfig().getStringList("action.content");
