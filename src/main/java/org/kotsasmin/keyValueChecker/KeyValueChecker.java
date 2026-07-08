@@ -33,10 +33,14 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.command.TabCompleter;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -44,15 +48,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
-public final class KeyValueChecker extends JavaPlugin implements Listener, CommandExecutor {
+public final class KeyValueChecker extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
     private List<String> translationKeys;
     private int sendDelay;
@@ -90,6 +91,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     }
 
     private final Map<UUID, CheckData> checkingPlayers = new ConcurrentHashMap<>();
+    private final List<String> whitelist = new ArrayList<>();
 
     @Override
     public void onEnable() {
@@ -152,6 +154,11 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("kvc-list").setExecutor(this);
         getCommand("kvc-reload").setExecutor(this);
+        org.bukkit.command.PluginCommand whitelistCmd = getCommand("kvc-whitelist");
+        if (whitelistCmd != null) {
+            whitelistCmd.setExecutor(this);
+            whitelistCmd.setTabCompleter(this);
+        }
         
         getLogger().info("KeyValueChecker enabled via pure PacketEvents NBT.");
     }
@@ -187,6 +194,10 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                 persistentRecords.put(uuid, new PlayerRecord(name, time, action, mods));
             }
         }
+        whitelist.clear();
+        if (dataConfig.contains("whitelist")) {
+            whitelist.addAll(dataConfig.getStringList("whitelist"));
+        }
     }
 
     private void saveData() {
@@ -198,6 +209,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
             dataConfig.set(path + ".action", entry.getValue().lastAction);
             dataConfig.set(path + ".mods", entry.getValue().detectedMods);
         }
+        dataConfig.set("whitelist", whitelist);
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
             try {
                 dataConfig.save(dataFile);
@@ -267,6 +279,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
             saveData();
         }
     }
+    @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("kvc-reload")) {
             if (sender.hasPermission("keyvaluechecker.reload")) {
@@ -298,12 +311,130 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
                 return true;
             }
         }
+        if (command.getName().equalsIgnoreCase("kvc-whitelist")) {
+            if (!sender.hasPermission("keyvaluechecker.whitelist")) {
+                sender.sendMessage("§cYou do not have permission to execute this command.");
+                return true;
+            }
+            if (args.length == 0) {
+                sender.sendMessage("§cUsage: /kvc-whitelist <add|remove|list> [player]");
+                return true;
+            }
+            String sub = args[0].toLowerCase();
+            if (sub.equals("list")) {
+                sender.sendMessage("§6--- Whitelisted Players ---");
+                if (whitelist.isEmpty()) {
+                    sender.sendMessage("§eNo players are whitelisted.");
+                } else {
+                    for (String name : whitelist) {
+                        sender.sendMessage("§7- §a" + name);
+                    }
+                }
+                return true;
+            }
+            if (sub.equals("add")) {
+                if (args.length < 2) {
+                    sender.sendMessage("§cUsage: /kvc-whitelist add <player>");
+                    return true;
+                }
+                String targetName = args[1];
+                if (whitelist.stream().anyMatch(targetName::equalsIgnoreCase)) {
+                    sender.sendMessage("§cPlayer §e" + targetName + " §cis already whitelisted.");
+                    return true;
+                }
+                whitelist.add(targetName);
+                saveData();
+                sender.sendMessage("§aAdded §e" + targetName + " §ato the whitelist.");
+                return true;
+            }
+            if (sub.equals("remove")) {
+                if (args.length < 2) {
+                    sender.sendMessage("§cUsage: /kvc-whitelist remove <player>");
+                    return true;
+                }
+                String targetName = args[1];
+                String matchedName = whitelist.stream()
+                        .filter(targetName::equalsIgnoreCase)
+                        .findFirst()
+                        .orElse(null);
+                if (matchedName == null) {
+                    sender.sendMessage("§cPlayer §e" + targetName + " §cis not on the whitelist.");
+                    return true;
+                }
+                whitelist.remove(matchedName);
+                saveData();
+                sender.sendMessage("§aRemoved §e" + matchedName + " §afrom the whitelist.");
+                return true;
+            }
+            sender.sendMessage("§cUnknown subcommand. Use add, remove, or list.");
+            return true;
+        }
         return false;
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!command.getName().equalsIgnoreCase("kvc-whitelist")) {
+            return null;
+        }
+        if (!sender.hasPermission("keyvaluechecker.whitelist")) {
+            return new ArrayList<>();
+        }
+        
+        List<String> suggestions = new ArrayList<>();
+        if (args.length == 1) {
+            String input = args[0].toLowerCase();
+            if ("add".startsWith(input)) suggestions.add("add");
+            if ("remove".startsWith(input)) suggestions.add("remove");
+            if ("list".startsWith(input)) suggestions.add("list");
+            return suggestions;
+        }
+        
+        if (args.length == 2) {
+            String sub = args[0].toLowerCase();
+            String input = args[1].toLowerCase();
+            if (sub.equals("add")) {
+                Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    names.add(p.getName());
+                }
+                for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
+                    if (op.getName() != null) {
+                        names.add(op.getName());
+                    }
+                }
+                for (PlayerRecord rec : persistentRecords.values()) {
+                    if (rec.playerName != null) {
+                        names.add(rec.playerName);
+                    }
+                }
+                for (String name : names) {
+                    if (name.toLowerCase().startsWith(input)) {
+                        suggestions.add(name);
+                    }
+                }
+                return suggestions;
+            } else if (sub.equals("remove")) {
+                for (String name : whitelist) {
+                    if (name.toLowerCase().startsWith(input)) {
+                        suggestions.add(name);
+                    }
+                }
+                return suggestions;
+            }
+        }
+        
+        return new ArrayList<>();
     }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+
+        if (whitelist.stream().anyMatch(player.getName()::equalsIgnoreCase)) {
+            getLogger().info("[KVC] Skipped check for whitelisted player: " + player.getName());
+            return;
+        }
 
         if (isBedrockPlayer(player.getUniqueId())) {
             getLogger().info("[KVC] Skipped check for Bedrock player: " + player.getName());

@@ -13,8 +13,14 @@ commands:
   kvc-list:
     description: Lists all players currently detected with mods
     permission: keyvaluechecker.list
+  kvc-whitelist:
+    description: Manages the player whitelist for bypassing checks
+    permission: keyvaluechecker.whitelist
 
 permissions:
   keyvaluechecker.notify:
     description: Allows admins to see in-game alerts when a player is detected with a disallowed mod.
+    default: op
+  keyvaluechecker.whitelist:
+    description: Allows managing the player whitelist for bypassing checks.
     default: op
