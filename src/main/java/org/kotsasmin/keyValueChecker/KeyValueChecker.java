@@ -55,7 +55,23 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 public final class KeyValueChecker extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
-    private List<String> translationKeys;
+    public static class TranslationCheckItem {
+        final String key;
+        final String name;
+        final boolean required; // false = blacklist (must not translate), true = whitelist (must translate)
+
+        public TranslationCheckItem(String key, String name, boolean required) {
+            this.key = key;
+            this.name = name;
+            this.required = required;
+        }
+
+        public TranslationCheckItem(String key, boolean required) {
+            this(key, key, required);
+        }
+    }
+
+    private List<TranslationCheckItem> checkQueue = new ArrayList<>();
     private int sendDelay;
 
     private static class PlayerRecord {
@@ -78,11 +94,11 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     
     private static class CheckData {
         int startIndex;
-        List<String> currentKeys;
+        List<TranslationCheckItem> currentKeys;
         Vector3i signLoc;
         BukkitTask timeoutTask;
 
-        CheckData(int startIndex, List<String> currentKeys, Vector3i signLoc, BukkitTask timeoutTask) {
+        CheckData(int startIndex, List<TranslationCheckItem> currentKeys, Vector3i signLoc, BukkitTask timeoutTask) {
             this.startIndex = startIndex;
             this.currentKeys = currentKeys;
             this.signLoc = signLoc;
@@ -118,27 +134,45 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
 
                         boolean flag = false;
                         String detectedMod = null;
+                        boolean isMissingRequired = false;
                         String[] lines = updateSign.getTextLines();
 
                         for (int i = 0; i < check.currentKeys.size(); i++) {
-                            String key = check.currentKeys.get(i);
-                            if (key == null) continue;
+                            TranslationCheckItem item = check.currentKeys.get(i);
+                            if (item == null || item.key == null) continue;
 
-                            String clientText = i < lines.length ? lines[i] : "";
+                            String clientText = (i < lines.length && lines[i] != null) ? lines[i] : "";
                             
-                            if (clientText != null && !clientText.isEmpty() && !clientText.equals("fallb") && !clientText.equals(key)) {
-                                flag = true;
-                                detectedMod = key;
-                                PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "detected", new ArrayList<>()));
-                                if (!record.detectedMods.contains(key)) record.detectedMods.add(key);
-                                record.lastIncidentTime = System.currentTimeMillis();
-                                getLogger().warning("[KVC] FLAG: " + player.getName() + " is using " + key);
-                                break; // Only need to detect one per batch to flag
+                            if (!item.required) {
+                                // Blacklist check: if client translated it, they have a disallowed mod
+                                if (!clientText.isEmpty() && !clientText.equals("fallb") && !clientText.equals(item.key)) {
+                                    flag = true;
+                                    detectedMod = item.name;
+                                    isMissingRequired = false;
+                                    PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "detected", new ArrayList<>()));
+                                    if (!record.detectedMods.contains(item.name)) record.detectedMods.add(item.name);
+                                    record.lastIncidentTime = System.currentTimeMillis();
+                                    getLogger().warning("[KVC] FLAG (Blacklist): " + player.getName() + " is using " + item.name + " (" + item.key + ")");
+                                    break; // Only need to detect one per batch to flag
+                                }
+                            } else {
+                                // Whitelist check: if client failed to translate it, they are MISSING a required mod
+                                if (clientText.isEmpty() || clientText.equals("fallb") || clientText.equals(item.key)) {
+                                    flag = true;
+                                    detectedMod = item.name;
+                                    isMissingRequired = true;
+                                    PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "missing required", new ArrayList<>()));
+                                    String missingLabel = "Missing: " + item.name;
+                                    if (!record.detectedMods.contains(missingLabel)) record.detectedMods.add(missingLabel);
+                                    record.lastIncidentTime = System.currentTimeMillis();
+                                    getLogger().warning("[KVC] FLAG (Whitelist/Missing): " + player.getName() + " is missing required mod: " + item.name + " (" + item.key + ")");
+                                    break;
+                                }
                             }
                         }
 
                         if (flag) {
-                            enforceAction(player, detectedMod);
+                            enforceAction(player, detectedMod, isMissingRequired);
                         } else {
                             Bukkit.getScheduler().runTask(KeyValueChecker.this, () -> {
                                 if (player.isOnline()) {
@@ -163,14 +197,86 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         getLogger().info("KeyValueChecker enabled via pure PacketEvents NBT.");
     }
 
+    private void migrateConfigIfNeeded() {
+        int version = getConfig().getInt("config-version", 0);
+        if (version != 2) {
+            getLogger().warning("[KVC] Config is outdated (version " + version + ", expected 2).");
+            getLogger().warning("[KVC] Backing up old config.yml and creating a new Version 2 config.yml...");
+            File configFile = new File(getDataFolder(), "config.yml");
+            if (configFile.exists()) {
+                File backupFile = new File(getDataFolder(), "config.backup." + System.currentTimeMillis() + ".yml");
+                boolean renamed = configFile.renameTo(backupFile);
+                if (renamed) {
+                    getLogger().info("[KVC] Backed up old config to: " + backupFile.getName());
+                } else {
+                    getLogger().warning("[KVC] Could not rename old config.yml to backup file!");
+                }
+            }
+            saveDefaultConfig();
+            reloadConfig();
+            getLogger().info("[KVC] New default config.yml (Version 2) has been generated and loaded.");
+        }
+    }
+
+    private void parseKeysSection(String path, boolean required) {
+        List<?> list = getConfig().getList(path);
+        if (list == null) return;
+
+        for (Object obj : list) {
+            if (obj instanceof Map) {
+                Map<?, ?> map = (Map<?, ?>) obj;
+                String key = String.valueOf(map.get("key"));
+                String name = map.containsKey("name") && map.get("name") != null ? String.valueOf(map.get("name")) : key;
+                if (key != null && !key.isEmpty() && !"null".equals(key)) {
+                    checkQueue.add(new TranslationCheckItem(key, name, required));
+                }
+            } else if (obj instanceof String) {
+                String str = (String) obj;
+                if (str != null && !str.isEmpty()) {
+                    checkQueue.add(new TranslationCheckItem(str, str, required));
+                }
+            }
+        }
+    }
+
     private void loadConfigValues() {
+        migrateConfigIfNeeded();
         reloadConfig();
-        translationKeys = getConfig().getStringList("translation-keys");
+
+        checkQueue = new ArrayList<>();
+
+        // Load Blacklist groups (required = false)
+        if (getConfig().isConfigurationSection("blacklist")) {
+            for (String group : getConfig().getConfigurationSection("blacklist").getKeys(false)) {
+                if (getConfig().getBoolean("blacklist." + group + ".enabled", true)) {
+                    parseKeysSection("blacklist." + group + ".keys", false);
+                }
+            }
+        }
+        // Fallback for old configs if blacklist is empty but translation-keys exists
+        if (checkQueue.isEmpty() && getConfig().contains("translation-keys")) {
+            for (String k : getConfig().getStringList("translation-keys")) {
+                if (k != null && !k.isEmpty()) {
+                    checkQueue.add(new TranslationCheckItem(k, false));
+                }
+            }
+        }
+
+        // Load Whitelist groups (required = true)
+        if (getConfig().isConfigurationSection("whitelist")) {
+            for (String group : getConfig().getConfigurationSection("whitelist").getKeys(false)) {
+                if (getConfig().getBoolean("whitelist." + group + ".enabled", false)) {
+                    parseKeysSection("whitelist." + group + ".keys", true);
+                }
+            }
+        }
+
         if (getConfig().contains("initial-check-delay-seconds")) {
             sendDelay = getConfig().getInt("initial-check-delay-seconds", 1) * 20;
         } else {
             sendDelay = getConfig().getInt("send-delay-ticks", 20);
         }
+        getLogger().info("[KVC] Loaded " + checkQueue.size() + " total translation keys to check.");
     }
 
     private void loadData() {
@@ -442,7 +548,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
         }
 
         Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline() && !translationKeys.isEmpty()) {
+            if (player.isOnline() && !checkQueue.isEmpty()) {
                 getLogger().info("[KVC] Starting check for player: " + player.getName());
                 runDetectionBatch(player, 0);
             }
@@ -480,7 +586,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     }
 
     private void runDetectionBatch(Player player, int startIndex) {
-        if (startIndex >= translationKeys.size()) {
+        if (startIndex >= checkQueue.size()) {
             return; // Finished checking all keys
         }
 
@@ -497,14 +603,14 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
 
         // 2. Build NBT Data for Sign
         List<NBTCompound> messagesList = new ArrayList<>();
-        List<String> currentKeys = new ArrayList<>();
+        List<TranslationCheckItem> currentKeys = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
-            if (startIndex + i < translationKeys.size()) {
-                String key = translationKeys.get(startIndex + i);
-                currentKeys.add(key);
+            if (startIndex + i < checkQueue.size()) {
+                TranslationCheckItem item = checkQueue.get(startIndex + i);
+                currentKeys.add(item);
                 
                 NBTCompound translationMessage = new NBTCompound();
-                translationMessage.setTag("translate", new NBTString(key));
+                translationMessage.setTag("translate", new NBTString(item.key));
                 translationMessage.setTag("fallback", new NBTString("fallb"));
                 messagesList.add(translationMessage);
             } else {
@@ -600,20 +706,27 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
     }
 
     private void enforceAction(Player player, String modName) {
+        enforceAction(player, modName, false);
+    }
+
+    private void enforceAction(Player player, String modName, boolean isMissingRequired) {
         Bukkit.getScheduler().runTaskLater(this, () -> {
             if (!player.isOnline()) return;
             
-            PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), "Kicked", new ArrayList<>()));
-            record.lastAction = "Kicked";
+            String actionLabel = isMissingRequired ? "Missing Required Mod" : "Kicked";
+            PlayerRecord record = persistentRecords.computeIfAbsent(player.getUniqueId(), k -> new PlayerRecord(player.getName(), System.currentTimeMillis(), actionLabel, new ArrayList<>()));
+            record.lastAction = actionLabel;
             record.lastIncidentTime = System.currentTimeMillis();
             saveData();
 
+            String webhookAction = isMissingRequired ? "Kicked (Missing Required Mod)" : "Kicked";
             if (!"Blocked check".equals(modName) || getConfig().getBoolean("discord-webhook.send-on-blocked-check", false)) {
-                sendWebhook(player, "Kicked", String.join(", ", record.detectedMods));
+                sendWebhook(player, webhookAction, String.join(", ", record.detectedMods));
             }
 
-            String actionType = getConfig().getString("action.type", "kick");
-            List<String> content = getConfig().getStringList("action.content");
+            String sectionPrefix = isMissingRequired ? "whitelist-action" : "action";
+            String actionType = getConfig().getString(sectionPrefix + ".type", "kick");
+            List<String> content = getConfig().getStringList(sectionPrefix + ".content");
             
             if (content == null || content.isEmpty()) return;
             
@@ -637,7 +750,11 @@ public final class KeyValueChecker extends JavaPlugin implements Listener, Comma
             }
             
             // Notify admins in-game
-            String alertFormat = getConfig().getString("admin-alert", "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications.");
+            String defaultAlert = isMissingRequired 
+                ? "&8[&cKVC&8] &e%player% &7tried to join without a required modification (&c%mod%&7)."
+                : "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications.";
+            String alertKey = isMissingRequired ? "whitelist-admin-alert" : "admin-alert";
+            String alertFormat = getConfig().getString(alertKey, defaultAlert);
             if (alertFormat != null && !alertFormat.isEmpty()) {
                 String formattedAlert = alertFormat.replace("%player%", player.getName()).replace("%mod%", modName);
                 Component adminAlert = LegacyComponentSerializer.legacyAmpersand().deserialize(formattedAlert);

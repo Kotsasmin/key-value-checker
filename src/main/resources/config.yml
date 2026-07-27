@@ -1,24 +1,126 @@
+config-version: 2
 initial-check-delay-seconds: 2
 kick-on-blocked-check: false
-translation-keys:
-  - "key.anything"
-  - "key.meteor-client.open-gui"
-  - "key.soundboard.open_config"
-  - "key.autototem.toggle"
-  - "key.smartoffhand.totem_swap"
-  - "key.invmove.category.general"
-  - "itemscroller.config.generic.name.carpetCtrlQCraftingEnabledOnServer"
-  - "key.healthindicators.renderingEnabled"
-  - "key.freecam.toggle"
-  - "net.clayborn.accurateblockplacement.togglevanillaplacement"
-  - "text.globalmacros.title"
-  - "jsmacrosce.close"
-  - "option.moremousetweaks.matching"
-  - "oinventoryprofiles.common.gui.config.reset"
+
+# Groups are only for cosmetics and mass disable feature, doesn't affect it otherwise.
+blacklist:
+  cheat-clients:
+    enabled: true
+    keys:
+      - key: "key.meteor-client.open-gui"
+        name: "Meteor Client"
+      - key: "liquidbounce.command.binds.description"
+        name: "LiquidBounce"
+      - key: "key.lumina.open_click_gui"
+        name: "Lumina Client"
+      - key: "bleachhack.module.killaura"
+        name: "BleachHack"
+      - key: "emc.module.killaura.name"
+        name: "EMC Client"
+      - key: "coffee.module.killaura.name"
+        name: "Coffee Client"
+      - key: "key.zergatul.cheatutils.reserved0"
+        name: "CheatUtils"
+      - key: "opsec.config.title"
+        name: "OpSec Client"
+  combat-cheats:
+    enabled: true
+    keys:
+      - key: "key.autototem.toggle"
+        name: "AutoTotem"
+      - key: "key.smartoffhand.totem_swap"
+        name: "SmartOffhand"
+      - key: "key.killaura"
+        name: "KillAura"
+      - key: "key.autoswitch.toggle"
+        name: "AutoSwitch"
+      - key: "autoclicker-fabric.hud.holding"
+        name: "Fabric AutoClicker"
+      - key: "key.auto-clicker_.toggle"
+        name: "AutoClicker"
+  movement-and-render-cheats:
+    enabled: true
+    keys:
+      - key: "key.invmove.category.general"
+        name: "InvMove"
+      - key: "key.healthindicators.renderingEnabled"
+        name: "Health Indicators"
+      - key: "key.freecam.toggle"
+        name: "Freecam"
+      - key: "text.autoconfig.chestesp.option.enable"
+        name: "Chest ESP"
+      - key: "key.category.customfov.general"
+        name: "Custom FOV"
+      - key: "key.tweakeroo.freecam"
+        name: "Tweakeroo (Freecam)"
+      - key: "xray.config.toggle"
+        name: "X-Ray Mod"
+  minimaps:
+    enabled: true
+    keys:
+      - key: "gui.xaero_minimap"
+        name: "Xaero's Minimap"
+      - key: "gui.xaero_open_map"
+        name: "Xaero's World Map"
+      - key: "options.minimap.radar"
+        name: "Voxel Minimap Radar"
+  seed-crackers:
+    enabled: true
+    keys:
+      - key: "cracker.enabled"
+        name: "SeedCrackerX"
+      - key: "generator.seedfindermod.seed_finder_world"
+        name: "Seed Finder Mod"
+  automation-and-macros:
+    enabled: true
+    keys:
+      - key: "net.clayborn.accurateblockplacement.togglevanillaplacement"
+        name: "Accurate Block Placement"
+      - key: "text.globalmacros.title"
+        name: "Global Macros"
+      - key: "jsmacrosce.close"
+        name: "JsMacros"
+      - key: "key.autofish.open_gui"
+        name: "AutoFish"
+  inventory-and-qol:
+    enabled: true
+    keys:
+      - key: "key.anything"
+        name: "Unauthorized Keybind"
+      - key: "key.soundboard.open_config"
+        name: "Soundboard Mod"
+      - key: "itemscroller.config.generic.name.carpetCtrlQCraftingEnabledOnServer"
+        name: "ItemScroller"
+      - key: "option.moremousetweaks.matching"
+        name: "More Mouse Tweaks"
+      - key: "oinventoryprofiles.common.gui.config.reset"
+        name: "Inventory Profiles"
+      - key: "key.wdl.startStop"
+        name: "World Downloader (WDL)"
+
+# Any groups put here and enabled will be checked from the client. If the player fails to translate it, they are missing the mod and will be kicked.
+whitelist:
+  example-required-mod:
+    enabled: false
+    keys:
+      - key: "example.required.mod.key"
+        name: "Example Required Mod"
+  voice-chat:
+    enabled: true
+    keys:
+      - key: "key.category.voicechat.voicechat"
+        name: "Simple Voice Chat"
+
 action:
   type: "kick"
   content:
-    - "&cYou have been kicked for using disallowed modifications!"
+    - "&cYou have been kicked for using disallowed modifications! (%mod%)"
+
+whitelist-action:
+  type: "kick"
+  content:
+    - "&cYou have been kicked for missing a required client modification: &e%mod%"
+
 admin-alert: "&8[&cKVC&8] &e%player% &7tried to join with disallowed modifications."
 
 discord-webhook:

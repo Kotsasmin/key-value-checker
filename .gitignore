@@ -5,3 +5,4 @@ run/
 test.class
 test.java
 *.jar
+.gradle_home/
