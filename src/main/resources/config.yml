@@ -106,7 +106,7 @@ whitelist:
       - key: "example.required.mod.key"
         name: "Example Required Mod"
   voice-chat:
-    enabled: true
+    enabled: false
     keys:
       - key: "key.category.voicechat.voicechat"
         name: "Simple Voice Chat"
