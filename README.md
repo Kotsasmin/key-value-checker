@@ -2,6 +2,18 @@
 
 KeyValueChecker is a lightweight, anti-cheat Minecraft server plugin designed to detect specific client-side mods (like Meteor Client, Freecam, AutoTotem) that are otherwise invisible to the server.
 
+## History
+
+So here is my journey of how I found out about this. Well, someone would say, exploit of Minecraft.
+
+I was trying to figure out how on earth DonutSMP could display the (now I know) Paper Adventure emojis in their dialogue system by inspecting each and every packet my client sent to the server. I had set up a proxy for that. As I was doing it, I saw many signs being placed around me with names like `key.freecam.toggle`, `key.category.voicechat.voicechat`, and such.
+
+After some research, I figured out about the exploit and thought of it as a really clever technique to finally get rid of most cheating players on a server that I was about to open.
+
+Well, after a couple of weeks of work, I made the plugin a reality and it worked almost flawlessly. I also had my dearest friend ToxicManiax help me discover the most well-known translation keys found in commonly used cheat clients or mods.
+
+Here it is out in the public now.
+
 ## How it Works (Technical Details)
 
 The plugin exploits the way the Minecraft client handles **Translation Components** on signs. It works entirely via packets using the `PacketEvents` library to bypass Bukkit serialization bugs (which otherwise cause "void future" disconnects on Paper 1.21+).
@@ -11,6 +23,6 @@ The plugin exploits the way the Minecraft client handles **Translation Component
 3. **Client-Side Resolution:**
    - If the player **has the mod installed**, their client's language map will successfully translate the key into a localized string (e.g., "Freecam").
    - If the player **does not have the mod**, the client fails to translate it and falls back to the raw string (e.g., "key.freecam.toggle").
-4. **Packet Interception:** When the sign editor is forcibly closed, the client sends an `UpdateSign` packet back to the server containing the text it evaluated. 
+4. **Packet Interception:** When the sign editor is forcibly closed, the client sends an `UpdateSign` packet back to the server containing the text it evaluated.
 5. **Detection Validation:** The plugin intercepts the `UpdateSign` packet. If the received text does *not* match the raw translation key, the server mathematically proves the client has the mod installed.
 6. **Batch Processing:** To remain performant, the plugin processes translation keys in batches of 4 (since signs have exactly 4 lines), re-sending packets until all configured keys are verified.

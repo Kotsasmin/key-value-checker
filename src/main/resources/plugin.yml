@@ -4,7 +4,7 @@ version: '${version}'
 main: org.kotsasmin.keyValueChecker.KeyValueChecker
 api-version: '1.21'
 load: POSTWORLD
-depend: [packetevents]
+softdepend: [packetevents]
 
 commands:
   kvc-reload:
@@ -18,9 +18,16 @@ commands:
     permission: keyvaluechecker.whitelist
 
 permissions:
+  keyvaluechecker.reload:
+    description: Allows reloading the KeyValueChecker configuration.
+    default: op
+  keyvaluechecker.list:
+    description: Allows viewing the detected modifications history.
+    default: op
   keyvaluechecker.notify:
     description: Allows admins to see in-game alerts when a player is detected with a disallowed mod.
     default: op
   keyvaluechecker.whitelist:
     description: Allows managing the player whitelist for bypassing checks.
     default: op
+
