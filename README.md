@@ -14,6 +14,12 @@ Well, after a couple of weeks of work, I made the plugin a reality and it worked
 
 Here it is out in the public now.
 
+I don't, of course, promote any kind of illegal activity or breaking the Minecraft EULA in any way. Quite the opposite, actually. I want everyone to play fair. I really despised the fact that 90% of the people who initially tried to enter my server had cheats on, and I didn't even know it was that bad. I want everyone to play fair, and to make those script kiddies with paid clients and cheating mods rethink what they are doing.
+
+Of course, if you know of any clients like this and want to contribute to the project, you might as well open an issue stating a few flags/keys that I should add by default. I know of some clients (I might have added some by now, like Crypton for instance), but I don't have all their translation keys.
+
+If you like the project and want to contribute, contact me on Discord or simply open an issue. I really enjoyed building this for everyone. I wish you all a happy and fair day! Love ya all!
+
 ## How it Works (Technical Details)
 
 The plugin exploits the way the Minecraft client handles **Translation Components** on signs. It works entirely via packets using the `PacketEvents` library to bypass Bukkit serialization bugs (which otherwise cause "void future" disconnects on Paper 1.21+).

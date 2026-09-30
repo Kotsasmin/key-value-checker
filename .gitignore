@@ -5,4 +5,6 @@ run/
 test.class
 test.java
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 .gradle_home/
+
