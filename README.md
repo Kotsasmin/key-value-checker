@@ -2,6 +2,13 @@
 
 KeyValueChecker is a lightweight, anti-cheat Minecraft server plugin designed to detect specific client-side mods (like Meteor Client, Freecam, AutoTotem) that are otherwise invisible to the server.
 
+## Installation
+
+1. Download the latest version from [Releases](https://github.com/Kotsasmin/key-value-checker/releases).
+2. Download [PacketEvents](https://modrinth.com/plugin/packetevents) (required dependency).
+3. Put both `.jar` files in your server's `plugins/` folder.
+4. Customize what you want to block in `config.yml`, and you are ready!
+
 ## History
 
 So here is my journey of how I found out about this. Well, someone would say, exploit of Minecraft.
@@ -32,3 +39,7 @@ The plugin exploits the way the Minecraft client handles **Translation Component
 4. **Packet Interception:** When the sign editor is forcibly closed, the client sends an `UpdateSign` packet back to the server containing the text it evaluated.
 5. **Detection Validation:** The plugin intercepts the `UpdateSign` packet. If the received text does *not* match the raw translation key, the server mathematically proves the client has the mod installed.
 6. **Batch Processing:** To remain performant, the plugin processes translation keys in batches of 4 (since signs have exactly 4 lines), re-sending packets until all configured keys are verified.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
