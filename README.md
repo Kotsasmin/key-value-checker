@@ -18,7 +18,7 @@ I don't, of course, promote any kind of illegal activity or breaking the Minecra
 
 Of course, if you know of any clients like this and want to contribute to the project, you might as well open an issue stating a few flags/keys that I should add by default. I know of some clients (I might have added some by now, like Crypton for instance), but I don't have all their translation keys.
 
-If you like the project and want to contribute, contact me on Discord or simply open an issue. I really enjoyed building this for everyone. I wish you all a happy and fair day! Love ya all!
+If you like the project, feel free to give it a star! If you want to contribute, contact me on Discord or simply open an issue. I really enjoyed building this for everyone. I wish you all a happy and fair day! Love ya all!
 
 ## How it Works (Technical Details)
 
