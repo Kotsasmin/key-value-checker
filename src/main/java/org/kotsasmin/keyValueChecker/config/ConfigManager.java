@@ -54,11 +54,16 @@ public class ConfigManager {
             }
         }
 
-        // metatropi tou delay se ticks
-        if (plugin.getConfig().contains("initial-check-delay-seconds")) {
-            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-seconds", 1) * 20;
+        // metatropi tou delay se ticks (default 2 ticks gia elegxo sto loading screen)
+        if (plugin.getConfig().contains("initial-check-delay-ticks")) {
+            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-ticks", 2);
+        } else if (plugin.getConfig().contains("initial-check-delay-seconds")) {
+            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-seconds", 0) * 20;
         } else {
-            sendDelayTicks = plugin.getConfig().getInt("send-delay-ticks", 20);
+            sendDelayTicks = plugin.getConfig().getInt("send-delay-ticks", 2);
+        }
+        if (sendDelayTicks < 1) {
+            sendDelayTicks = 1;
         }
 
         plugin.getLogger().info("[KVC] Loaded " + checkQueue.size() + " total translation keys to check.");

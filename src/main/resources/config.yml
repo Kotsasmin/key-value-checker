@@ -1,5 +1,6 @@
 config-version: 2
-initial-check-delay-seconds: 2
+# Delay in ticks before starting the check (2 ticks = runs while player is on "Loading terrain" screen)
+initial-check-delay-ticks: 2
 kick-on-blocked-check: false
 
 # Groups are only for cosmetics and mass disable feature, doesn't affect it otherwise.
