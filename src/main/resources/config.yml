@@ -77,6 +77,8 @@ blacklist:
     keys:
       - key: "net.clayborn.accurateblockplacement.togglevanillaplacement"
         name: "Accurate Block Placement"
+      - key: "easyplacefix.config.name.enableFix"
+        name: "Easy Place Fix"
       - key: "text.globalmacros.title"
         name: "Global Macros"
       - key: "jsmacrosce.close"
