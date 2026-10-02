@@ -1,6 +1,7 @@
 package org.kotsasmin.keyValueChecker.detector;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.nbt.NBTByte;
 import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
 import com.github.retrooper.packetevents.protocol.nbt.NBTList;
@@ -65,7 +66,9 @@ public class CheckManager {
         // perimenoume ligo delay prin ksekinisei to check
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && !configManager.getCheckQueue().isEmpty()) {
-                plugin.getLogger().info("[KVC] Starting check for player: " + player.getName());
+                ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
+                String verStr = (clientVersion != null && clientVersion != ClientVersion.UNKNOWN) ? clientVersion.getReleaseName() : "unknown";
+                plugin.getLogger().info("[KVC] Starting check for player: " + player.getName() + " (Client: " + verStr + ")");
                 runDetectionBatch(player, 0);
             }
         }, configManager.getSendDelayTicks());
@@ -112,38 +115,23 @@ public class CheckManager {
         WrapperPlayServerBlockChange blockChange = new WrapperPlayServerBlockChange(v3i, signStateId);
         PacketEvents.getAPI().getPlayerManager().sendPacket(player, blockChange);
 
-        // 2 - Build NBT Data for Sign
-        List<NBTCompound> messagesList = new ArrayList<>();
+        // elegxoume to client version tou paikti me packetevents gia full compatibility
+        ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
+        if (clientVersion == null || clientVersion == ClientVersion.UNKNOWN) {
+            clientVersion = ClientVersion.getLatest();
+        }
+
+        // 2 - Build NBT Data for Sign analoga me to client protocol (1.8-1.19 legacy, 1.20-1.20.4 string list, 1.20.5+ compound list)
         List<TranslationCheckItem> currentKeys = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             if (startIndex + i < checkQueue.size()) {
-                TranslationCheckItem item = checkQueue.get(startIndex + i);
-                currentKeys.add(item);
-
-                NBTCompound translationMessage = new NBTCompound();
-                translationMessage.setTag("translate", new NBTString(item.getKey()));
-                translationMessage.setTag("fallback", new NBTString("fallb"));
-                messagesList.add(translationMessage);
+                currentKeys.add(checkQueue.get(startIndex + i));
             } else {
                 currentKeys.add(null);
-
-                NBTCompound emptyMessage = new NBTCompound();
-                emptyMessage.setTag("text", new NBTString(""));
-                messagesList.add(emptyMessage);
             }
         }
 
-        NBTList<NBTCompound> messages = new NBTList<>(NBTType.COMPOUND, messagesList);
-        NBTCompound text = new NBTCompound();
-        text.setTag("messages", messages);
-        text.setTag("color", new NBTString("black"));
-        text.setTag("has_glowing_text", new NBTByte((byte) 0));
-
-        NBTCompound nbt = new NBTCompound();
-        nbt.setTag("id", new NBTString("minecraft:sign"));
-        nbt.setTag("front_text", text);
-        nbt.setTag("back_text", text);
-        nbt.setTag("is_waxed", new NBTByte((byte) 0));
+        NBTCompound nbt = buildSignNBT(clientVersion, currentKeys);
 
         // 3 - Send Block Entity Data (NBT) to apply translation components
         WrapperPlayServerBlockEntityData blockEntityData = new WrapperPlayServerBlockEntityData(v3i, BlockEntityTypes.SIGN, nbt);
@@ -153,13 +141,19 @@ public class CheckManager {
         WrapperPlayServerOpenSignEditor openSign = new WrapperPlayServerOpenSignEditor(v3i, true);
         PacketEvents.getAPI().getPlayerManager().sendPacket(player, openSign);
 
-        // 5 - Send a fake container window to force the client to replace the sign screen, triggering UPDATE_SIGN silently
-        WrapperPlayServerOpenWindow openWindow = new WrapperPlayServerOpenWindow(1, 0, Component.empty());
-        PacketEvents.getAPI().getPlayerManager().sendPacket(player, openWindow);
+        // 5 - Force close the sign editor analoga me to client protocol
+        if (clientVersion.isOlderThan(ClientVersion.V_1_20)) {
+            // Gia 1.8 ews 1.19.4, to CloseWindow(0) kleinei to screen amesws xwris na anoiksei container gui!
+            WrapperPlayServerCloseWindow closeWindow = new WrapperPlayServerCloseWindow(0);
+            PacketEvents.getAPI().getPlayerManager().sendPacket(player, closeWindow);
+        } else {
+            // Gia 1.20+, stelnoume fake container window gia na fygei to sign screen kai amesws to kleinoume
+            WrapperPlayServerOpenWindow openWindow = new WrapperPlayServerOpenWindow(1, 0, Component.empty());
+            PacketEvents.getAPI().getPlayerManager().sendPacket(player, openWindow);
 
-        // 6 - Instantly close the fake window
-        WrapperPlayServerCloseWindow closeWindow = new WrapperPlayServerCloseWindow(1);
-        PacketEvents.getAPI().getPlayerManager().sendPacket(player, closeWindow);
+            WrapperPlayServerCloseWindow closeWindow = new WrapperPlayServerCloseWindow(1);
+            PacketEvents.getAPI().getPlayerManager().sendPacket(player, closeWindow);
+        }
 
         // 7 - Instantly restore the block
         clearFakeBlock(player, v3i);
@@ -207,6 +201,76 @@ public class CheckManager {
         }, 60L);
 
         checkingPlayers.put(player.getUniqueId(), new CheckData(startIndex, currentKeys, v3i, timeoutTask));
+    }
+
+    private NBTCompound buildSignNBT(ClientVersion version, List<TranslationCheckItem> currentKeys) {
+        NBTCompound nbt = new NBTCompound();
+        nbt.setTag("id", new NBTString("minecraft:sign"));
+
+        // Case 1: Pre-1.20 (1.8 ews 1.19.4) - ta signs xrisimopoioun Text1, Text2, Text3, Text4 sto root NBT
+        if (version.isOlderThan(ClientVersion.V_1_20)) {
+            for (int i = 0; i < 4; i++) {
+                String tagName = "Text" + (i + 1);
+                TranslationCheckItem item = (i < currentKeys.size()) ? currentKeys.get(i) : null;
+                if (item != null && item.getKey() != null) {
+                    String json = "{\"translate\":\"" + item.getKey() + "\",\"fallback\":\"fallb\"}";
+                    nbt.setTag(tagName, new NBTString(json));
+                } else {
+                    nbt.setTag(tagName, new NBTString("{\"text\":\"\"}"));
+                }
+            }
+            return nbt;
+        }
+
+        // Case 2: 1.20.0 ews 1.20.4 - front_text / back_text me List apo JSON Strings
+        if (version.isOlderThan(ClientVersion.V_1_20_5)) {
+            List<NBTString> messagesList = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                TranslationCheckItem item = (i < currentKeys.size()) ? currentKeys.get(i) : null;
+                if (item != null && item.getKey() != null) {
+                    String json = "{\"translate\":\"" + item.getKey() + "\",\"fallback\":\"fallb\"}";
+                    messagesList.add(new NBTString(json));
+                } else {
+                    messagesList.add(new NBTString("{\"text\":\"\"}"));
+                }
+            }
+            NBTList<NBTString> messages = new NBTList<>(NBTType.STRING, messagesList);
+            NBTCompound text = new NBTCompound();
+            text.setTag("messages", messages);
+            text.setTag("color", new NBTString("black"));
+            text.setTag("has_glowing_text", new NBTByte((byte) 0));
+
+            nbt.setTag("front_text", text);
+            nbt.setTag("back_text", text);
+            nbt.setTag("is_waxed", new NBTByte((byte) 0));
+            return nbt;
+        }
+
+        // Case 3: Modern 1.20.5+ kai 1.21+ - front_text / back_text me List apo NBT Compounds
+        List<NBTCompound> messagesList = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            TranslationCheckItem item = (i < currentKeys.size()) ? currentKeys.get(i) : null;
+            if (item != null && item.getKey() != null) {
+                NBTCompound translationMessage = new NBTCompound();
+                translationMessage.setTag("translate", new NBTString(item.getKey()));
+                translationMessage.setTag("fallback", new NBTString("fallb"));
+                messagesList.add(translationMessage);
+            } else {
+                NBTCompound emptyMessage = new NBTCompound();
+                emptyMessage.setTag("text", new NBTString(""));
+                messagesList.add(emptyMessage);
+            }
+        }
+        NBTList<NBTCompound> messages = new NBTList<>(NBTType.COMPOUND, messagesList);
+        NBTCompound text = new NBTCompound();
+        text.setTag("messages", messages);
+        text.setTag("color", new NBTString("black"));
+        text.setTag("has_glowing_text", new NBTByte((byte) 0));
+
+        nbt.setTag("front_text", text);
+        nbt.setTag("back_text", text);
+        nbt.setTag("is_waxed", new NBTByte((byte) 0));
+        return nbt;
     }
 
     private void clearFakeBlock(Player player, Vector3i loc) {
