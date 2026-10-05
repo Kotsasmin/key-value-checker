@@ -1,7 +1,7 @@
 config-version: 2
-# Delay in ticks before starting the check (2 ticks = runs while player is on "Loading terrain" screen)
-initial-check-delay-ticks: 2
-kick-on-blocked-check: false
+# Delay in ticks before starting the check (40 ticks = 2 seconds, allows terrain to load completely)
+initial-check-delay-ticks: 40
+kick-on-blocked-check: true
 
 # Groups are only for cosmetics and mass disable feature, doesn't affect it otherwise.
 blacklist:
@@ -9,6 +9,8 @@ blacklist:
     enabled: true
     keys:
       - key: "key.meteor-client.open-gui"
+        name: "Meteor Client"
+      - key: "key.category.meteor-client.meteor-client"
         name: "Meteor Client"
       - key: "liquidbounce.command.binds.description"
         name: "LiquidBounce"

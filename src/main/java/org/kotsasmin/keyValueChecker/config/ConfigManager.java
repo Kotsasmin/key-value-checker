@@ -54,13 +54,13 @@ public class ConfigManager {
             }
         }
 
-        // metatropi tou delay se ticks (default 2 ticks gia elegxo sto loading screen)
+        // metatropi tou delay se ticks (default 40 ticks = 2s gia na exei teleiwsei to loading screen)
         if (plugin.getConfig().contains("initial-check-delay-ticks")) {
-            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-ticks", 2);
+            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-ticks", 40);
         } else if (plugin.getConfig().contains("initial-check-delay-seconds")) {
-            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-seconds", 0) * 20;
+            sendDelayTicks = plugin.getConfig().getInt("initial-check-delay-seconds", 2) * 20;
         } else {
-            sendDelayTicks = plugin.getConfig().getInt("send-delay-ticks", 2);
+            sendDelayTicks = plugin.getConfig().getInt("send-delay-ticks", 40);
         }
         if (sendDelayTicks < 1) {
             sendDelayTicks = 1;
