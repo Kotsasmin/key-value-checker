@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -19,32 +20,24 @@ import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.kotsasmin.keyValueChecker.config.ConfigManager;
 
-import org.bukkit.plugin.java.JavaPlugin;
-
 import java.time.Duration;
-import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class QuarantineManager implements Listener {
     private final JavaPlugin plugin;
     private final ConfigManager configManager;
-    private final Map<UUID, QuarantineState> quarantined = new ConcurrentHashMap<>();
-
-    private static class QuarantineState {
-        final boolean wasInvulnerable;
-
-        QuarantineState(boolean wasInvulnerable) {
-            this.wasInvulnerable = wasInvulnerable;
-        }
-    }
+    private final Set<UUID> quarantined = ConcurrentHashMap.newKeySet();
 
     public QuarantineManager(JavaPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
@@ -52,7 +45,7 @@ public class QuarantineManager implements Listener {
     }
 
     public boolean isQuarantined(UUID uuid) {
-        return quarantined.containsKey(uuid);
+        return quarantined.contains(uuid);
     }
 
     public void quarantinePlayer(Player player) {
@@ -61,12 +54,14 @@ public class QuarantineManager implements Listener {
             Bukkit.getScheduler().runTask(plugin, () -> quarantinePlayer(player));
             return;
         }
-        if (quarantined.containsKey(player.getUniqueId())) return;
+        if (quarantined.contains(player.getUniqueId())) return;
 
-        boolean wasInvulnerable = player.isInvulnerable();
-        quarantined.put(player.getUniqueId(), new QuarantineState(wasInvulnerable));
+        quarantined.add(player.getUniqueId());
 
-        player.setInvulnerable(true);
+        // Self-heal opwsdipote an o paiktis eixe meinei me invulnerable apo proigoumena bugs
+        if (player.getGameMode() == GameMode.SURVIVAL || player.getGameMode() == GameMode.ADVENTURE) {
+            player.setInvulnerable(false);
+        }
 
         if (configManager.isQuarantineSensoryBlackout()) {
             player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 60, 1, false, false, false));
@@ -90,11 +85,13 @@ public class QuarantineManager implements Listener {
             return;
         }
 
-        QuarantineState state = quarantined.remove(player.getUniqueId());
-        if (state == null) return;
+        boolean wasQuarantined = quarantined.remove(player.getUniqueId());
+        if (!wasQuarantined) return;
 
         if (player.isOnline()) {
-            player.setInvulnerable(state.wasInvulnerable);
+            if (player.getGameMode() == GameMode.SURVIVAL || player.getGameMode() == GameMode.ADVENTURE) {
+                player.setInvulnerable(false);
+            }
 
             if (configManager.isQuarantineSensoryBlackout()) {
                 player.removePotionEffect(PotionEffectType.BLINDNESS);
@@ -120,11 +117,13 @@ public class QuarantineManager implements Listener {
             return;
         }
 
-        QuarantineState state = quarantined.remove(player.getUniqueId());
-        if (state == null) return;
+        boolean wasQuarantined = quarantined.remove(player.getUniqueId());
+        if (!wasQuarantined) return;
 
         if (player.isOnline()) {
-            player.setInvulnerable(state.wasInvulnerable);
+            if (player.getGameMode() == GameMode.SURVIVAL || player.getGameMode() == GameMode.ADVENTURE) {
+                player.setInvulnerable(false);
+            }
             if (configManager.isQuarantineSensoryBlackout()) {
                 player.removePotionEffect(PotionEffectType.BLINDNESS);
                 try {
@@ -141,13 +140,24 @@ public class QuarantineManager implements Listener {
             return;
         }
 
-        for (UUID uuid : quarantined.keySet()) {
+        for (UUID uuid : quarantined) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null && player.isOnline()) {
                 releasePlayer(player, false);
             }
         }
         quarantined.clear();
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        // Self-heal opoiodipote playerdata eixe apothikeusei Invulnerable: 1b sto Survival/Adventure
+        if (player.getGameMode() == GameMode.SURVIVAL || player.getGameMode() == GameMode.ADVENTURE) {
+            if (player.isInvulnerable()) {
+                player.setInvulnerable(false);
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
