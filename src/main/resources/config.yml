@@ -3,6 +3,16 @@ config-version: 2
 initial-check-delay-ticks: 40
 kick-on-blocked-check: true
 
+# Quarantine player in place during initial join verification (manual scans always remain silent)
+quarantine:
+  enabled: true
+  sensory-blackout: true
+  title: ""
+  subtitle: ""
+  blocked-command-message: "&cCommands are disabled while your client is being verified."
+  blocked-chat-message: "&cChat is disabled while your client is being verified."
+  completed-message: "&aClient verification completed."
+
 # Groups are only for cosmetics and mass disable feature, doesn't affect it otherwise.
 blacklist:
   cheat-clients:

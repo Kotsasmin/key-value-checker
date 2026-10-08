@@ -14,6 +14,7 @@ import org.kotsasmin.keyValueChecker.config.ConfigManager;
 import org.kotsasmin.keyValueChecker.data.DataManager;
 import org.kotsasmin.keyValueChecker.detector.CheckManager;
 import org.kotsasmin.keyValueChecker.detector.SignPacketListener;
+import org.kotsasmin.keyValueChecker.quarantine.QuarantineManager;
 import org.kotsasmin.keyValueChecker.webhook.DiscordWebhookNotifier;
 
 public final class KeyValueChecker extends JavaPlugin implements Listener {
@@ -21,6 +22,7 @@ public final class KeyValueChecker extends JavaPlugin implements Listener {
     private ConfigManager configManager;
     private DataManager dataManager;
     private DiscordWebhookNotifier webhookNotifier;
+    private QuarantineManager quarantineManager;
     private CheckManager checkManager;
     private PacketListenerAbstract packetListener;
 
@@ -42,14 +44,16 @@ public final class KeyValueChecker extends JavaPlugin implements Listener {
         dataManager = new DataManager(this);
         dataManager.loadData();
 
+        quarantineManager = new QuarantineManager(this, configManager);
         webhookNotifier = new DiscordWebhookNotifier(this, configManager);
-        checkManager = new CheckManager(this, configManager, dataManager, webhookNotifier);
+        checkManager = new CheckManager(this, configManager, dataManager, webhookNotifier, quarantineManager);
 
         // vazoume to packet listener kai kratame to reference gia na einai reload safe
         packetListener = new SignPacketListener(this, checkManager, dataManager);
         PacketEvents.getAPI().getEventManager().registerListener(packetListener);
 
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(quarantineManager, this);
 
         // commands
         KvcCommand kvcCommand = new KvcCommand(configManager, dataManager, checkManager);
@@ -106,6 +110,10 @@ public final class KeyValueChecker extends JavaPlugin implements Listener {
             checkManager.cancelAllChecks();
         }
 
+        if (quarantineManager != null) {
+            quarantineManager.releaseAll();
+        }
+
         // synchronous save gia na min petaksei IllegalPluginAccessException sto shutdown
         if (dataManager != null) {
             dataManager.saveData(false);
@@ -138,5 +146,9 @@ public final class KeyValueChecker extends JavaPlugin implements Listener {
 
     public CheckManager getCheckManager() {
         return checkManager;
+    }
+
+    public QuarantineManager getQuarantineManager() {
+        return quarantineManager;
     }
 }

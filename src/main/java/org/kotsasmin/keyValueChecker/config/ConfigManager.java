@@ -180,4 +180,32 @@ public class ConfigManager {
     public String getDiscordWebhookFooter() {
         return plugin.getConfig().getString("discord-webhook.embed.footer", "");
     }
+
+    public boolean isQuarantineEnabled() {
+        return plugin.getConfig().getBoolean("quarantine.enabled", true);
+    }
+
+    public boolean isQuarantineSensoryBlackout() {
+        return plugin.getConfig().getBoolean("quarantine.sensory-blackout", true);
+    }
+
+    public String getQuarantineTitle() {
+        return plugin.getConfig().getString("quarantine.title", "");
+    }
+
+    public String getQuarantineSubtitle() {
+        return plugin.getConfig().getString("quarantine.subtitle", "");
+    }
+
+    public String getQuarantineBlockedCommandMessage() {
+        return plugin.getConfig().getString("quarantine.blocked-command-message", "&cCommands are disabled while your client is being verified.");
+    }
+
+    public String getQuarantineBlockedChatMessage() {
+        return plugin.getConfig().getString("quarantine.blocked-chat-message", "&cChat is disabled while your client is being verified.");
+    }
+
+    public String getQuarantineCompletedMessage() {
+        return plugin.getConfig().getString("quarantine.completed-message", "&aClient verification completed.");
+    }
 }

@@ -28,6 +28,7 @@ import org.kotsasmin.keyValueChecker.config.ConfigManager;
 import org.kotsasmin.keyValueChecker.data.DataManager;
 import org.kotsasmin.keyValueChecker.data.PlayerRecord;
 import org.kotsasmin.keyValueChecker.data.TranslationCheckItem;
+import org.kotsasmin.keyValueChecker.quarantine.QuarantineManager;
 import org.kotsasmin.keyValueChecker.webhook.DiscordWebhookNotifier;
 
 import java.util.ArrayList;
@@ -41,15 +42,17 @@ public class CheckManager {
     private final ConfigManager configManager;
     private final DataManager dataManager;
     private final DiscordWebhookNotifier webhookNotifier;
+    private final QuarantineManager quarantineManager;
 
     private final Map<UUID, CheckData> checkingPlayers = new ConcurrentHashMap<>();
     private final Map<UUID, CommandSender> scanInitiators = new ConcurrentHashMap<>();
 
-    public CheckManager(JavaPlugin plugin, ConfigManager configManager, DataManager dataManager, DiscordWebhookNotifier webhookNotifier) {
+    public CheckManager(JavaPlugin plugin, ConfigManager configManager, DataManager dataManager, DiscordWebhookNotifier webhookNotifier, QuarantineManager quarantineManager) {
         this.plugin = plugin;
         this.configManager = configManager;
         this.dataManager = dataManager;
         this.webhookNotifier = webhookNotifier;
+        this.quarantineManager = quarantineManager;
     }
 
     public boolean scanPlayer(CommandSender sender, Player target) {
@@ -85,6 +88,7 @@ public class CheckManager {
             sender.sendMessage("§7Note: Player is on the whitelist, but manual scan is proceeding.");
         }
 
+        // Manual scan runs silently in background without quarantining the player
         runDetectionBatch(target, 0);
         return true;
     }
@@ -102,6 +106,15 @@ public class CheckManager {
             return;
         }
 
+        if (configManager.getCheckQueue().isEmpty()) {
+            return;
+        }
+
+        // Freeze and isolate player during check if quarantine is enabled
+        if (configManager.isQuarantineEnabled()) {
+            quarantineManager.quarantinePlayer(player);
+        }
+
         // perimenoume ligo delay prin ksekinisei to check
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && !configManager.getCheckQueue().isEmpty()) {
@@ -115,6 +128,7 @@ public class CheckManager {
 
     public void handlePlayerQuit(Player player) {
         scanInitiators.remove(player.getUniqueId());
+        quarantineManager.cleanupPlayer(player);
         CheckData check = checkingPlayers.remove(player.getUniqueId());
         if (check != null && check.getTimeoutTask() != null) {
             check.getTimeoutTask().cancel();
@@ -123,6 +137,7 @@ public class CheckManager {
 
     public void cancelAllChecks() {
         scanInitiators.clear();
+        quarantineManager.releaseAll();
         for (CheckData check : checkingPlayers.values()) {
             if (check.getTimeoutTask() != null) {
                 check.getTimeoutTask().cancel();
@@ -148,6 +163,7 @@ public class CheckManager {
                     initiator.sendMessage("§a[KVC] Scan completed for §e" + player.getName() + "§a: No disallowed modifications detected.");
                 }
             }
+            quarantineManager.releasePlayer(player, true);
             return; // Finished checking all keys
         }
 
@@ -339,6 +355,7 @@ public class CheckManager {
 
     public void enforceAction(Player player, String modName, boolean isMissingRequired) {
         scanInitiators.remove(player.getUniqueId());
+        quarantineManager.releasePlayer(player, false);
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
 
