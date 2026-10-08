@@ -71,9 +71,9 @@ public class ConfigManager {
 
     private void migrateConfigIfNeeded() {
         int version = plugin.getConfig().getInt("config-version", 0);
-        if (version != 2) {
-            plugin.getLogger().warning("[KVC] Config is outdated (version " + version + ", expected 2).");
-            plugin.getLogger().warning("[KVC] Backing up old config.yml and creating a new Version 2 config.yml...");
+        if (version != 3) {
+            plugin.getLogger().warning("[KVC] Config is outdated (version " + version + ", expected 3).");
+            plugin.getLogger().warning("[KVC] Backing up old config.yml and creating a new Version 3 config.yml...");
             File configFile = new File(plugin.getDataFolder(), "config.yml");
             if (configFile.exists()) {
                 File backupFile = new File(plugin.getDataFolder(), "config.backup." + System.currentTimeMillis() + ".yml");
@@ -86,7 +86,7 @@ public class ConfigManager {
             }
             plugin.saveDefaultConfig();
             plugin.reloadConfig();
-            plugin.getLogger().info("[KVC] New default config.yml (Version 2) has been generated and loaded.");
+            plugin.getLogger().info("[KVC] New default config.yml (Version 3) has been generated and loaded.");
         }
     }
 

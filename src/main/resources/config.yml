@@ -1,4 +1,4 @@
-config-version: 2
+config-version: 3
 # Delay in ticks before starting the check (40 ticks = 2 seconds, allows terrain to load completely)
 initial-check-delay-ticks: 40
 kick-on-blocked-check: true
