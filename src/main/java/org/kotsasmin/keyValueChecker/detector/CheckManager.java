@@ -94,6 +94,11 @@ public class CheckManager {
     }
 
     public void handlePlayerJoin(Player player) {
+        // an oi elegxoi sto join einai apenergopoihmenoi, skip
+        if (!configManager.isCheckOnJoin()) {
+            return;
+        }
+
         // an o paiktis einai whitelisted, skip
         if (dataManager.isWhitelisted(player.getName())) {
             plugin.getLogger().info("[KVC] Skipped check for whitelisted player: " + player.getName());

@@ -1,4 +1,7 @@
-config-version: 3
+config-version: 4
+# Whether to automatically check players when they join the server.
+# Set to false if you only want to use manual scanning (/kvc scan <player>).
+check-on-join: true
 # Delay in ticks before starting the check (40 ticks = 2 seconds, allows terrain to load completely)
 initial-check-delay-ticks: 40
 kick-on-blocked-check: true
