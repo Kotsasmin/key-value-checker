@@ -7,17 +7,44 @@ load: POSTWORLD
 softdepend: [packetevents]
 
 commands:
+  kvc:
+    description: Main KeyValueChecker command
+    aliases: [keyvaluechecker]
+  kvc-scan:
+    description: Scans an online player for disallowed modifications
+    permission: keyvaluechecker.scan
+    permission-message: "§cYou do not have permission to execute this command."
   kvc-reload:
     description: Reloads the KeyValueChecker config
     permission: keyvaluechecker.reload
+    permission-message: "§cYou do not have permission to execute this command."
   kvc-list:
     description: Lists all players currently detected with mods
     permission: keyvaluechecker.list
+    permission-message: "§cYou do not have permission to execute this command."
   kvc-whitelist:
     description: Manages the player whitelist for bypassing checks
     permission: keyvaluechecker.whitelist
+    permission-message: "§cYou do not have permission to execute this command."
 
 permissions:
+  keyvaluechecker.*:
+    description: Gives access to all KeyValueChecker commands and features.
+    default: op
+    children:
+      keyvaluechecker.scan: true
+      keyvaluechecker.reload: true
+      keyvaluechecker.list: true
+      keyvaluechecker.notify: true
+      keyvaluechecker.whitelist: true
+  keyvaluechecker.admin:
+    description: Full administrator permission for KeyValueChecker.
+    default: op
+    children:
+      keyvaluechecker.*: true
+  keyvaluechecker.scan:
+    description: Allows manually scanning an online player for modifications.
+    default: op
   keyvaluechecker.reload:
     description: Allows reloading the KeyValueChecker configuration.
     default: op

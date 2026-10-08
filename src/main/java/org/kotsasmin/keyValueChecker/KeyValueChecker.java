@@ -52,18 +52,36 @@ public final class KeyValueChecker extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
 
         // commands
-        KvcCommand kvcCommand = new KvcCommand(configManager, dataManager);
+        KvcCommand kvcCommand = new KvcCommand(configManager, dataManager, checkManager);
+
+        PluginCommand mainCmd = getCommand("kvc");
+        if (mainCmd != null) {
+            mainCmd.setExecutor(kvcCommand);
+            mainCmd.setTabCompleter(kvcCommand);
+        }
+
+        PluginCommand scanCmd = getCommand("kvc-scan");
+        if (scanCmd != null) {
+            scanCmd.setExecutor(kvcCommand);
+            scanCmd.setTabCompleter(kvcCommand);
+        }
+
         PluginCommand reloadCmd = getCommand("kvc-reload");
-        if (reloadCmd != null) reloadCmd.setExecutor(kvcCommand);
+        if (reloadCmd != null) {
+            reloadCmd.setExecutor(kvcCommand);
+            reloadCmd.setTabCompleter(kvcCommand);
+        }
 
         PluginCommand listCmd = getCommand("kvc-list");
-        if (listCmd != null) listCmd.setExecutor(kvcCommand);
+        if (listCmd != null) {
+            listCmd.setExecutor(kvcCommand);
+            listCmd.setTabCompleter(kvcCommand);
+        }
 
         PluginCommand whitelistCmd = getCommand("kvc-whitelist");
         if (whitelistCmd != null) {
-            WhitelistCommand wlHandler = new WhitelistCommand(dataManager);
-            whitelistCmd.setExecutor(wlHandler);
-            whitelistCmd.setTabCompleter(wlHandler);
+            whitelistCmd.setExecutor(kvcCommand);
+            whitelistCmd.setTabCompleter(kvcCommand);
         }
 
         getLogger().info("KeyValueChecker enabled via pure PacketEvents NBT.");

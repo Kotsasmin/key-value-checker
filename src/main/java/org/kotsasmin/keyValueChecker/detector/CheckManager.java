@@ -20,6 +20,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -42,12 +43,50 @@ public class CheckManager {
     private final DiscordWebhookNotifier webhookNotifier;
 
     private final Map<UUID, CheckData> checkingPlayers = new ConcurrentHashMap<>();
+    private final Map<UUID, CommandSender> scanInitiators = new ConcurrentHashMap<>();
 
     public CheckManager(JavaPlugin plugin, ConfigManager configManager, DataManager dataManager, DiscordWebhookNotifier webhookNotifier) {
         this.plugin = plugin;
         this.configManager = configManager;
         this.dataManager = dataManager;
         this.webhookNotifier = webhookNotifier;
+    }
+
+    public boolean scanPlayer(CommandSender sender, Player target) {
+        if (!target.isOnline()) {
+            sender.sendMessage("§cPlayer §e" + target.getName() + " §cis not online.");
+            return false;
+        }
+
+        if (isBedrockPlayer(target.getUniqueId())) {
+            sender.sendMessage("§cCannot scan §e" + target.getName() + " §c(Bedrock players do not have Java translation keys).");
+            return false;
+        }
+
+        if (configManager.getCheckQueue().isEmpty()) {
+            sender.sendMessage("§cNo translation check keys are loaded or enabled in configuration.");
+            return false;
+        }
+
+        if (getActiveCheck(target.getUniqueId()) != null) {
+            sender.sendMessage("§cPlayer §e" + target.getName() + " §cis already being scanned.");
+            return false;
+        }
+
+        scanInitiators.put(target.getUniqueId(), sender);
+
+        ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(target);
+        String verStr = (clientVersion != null && clientVersion != ClientVersion.UNKNOWN) ? clientVersion.getReleaseName() : "unknown";
+
+        plugin.getLogger().info("[KVC] Manual scan initiated for " + target.getName() + " (Client: " + verStr + ") by " + sender.getName());
+        sender.sendMessage("§a[KVC] Initiating scan for §e" + target.getName() + " §7(Client: " + verStr + ", " + configManager.getCheckQueue().size() + " keys)§a...");
+
+        if (dataManager.isWhitelisted(target.getName())) {
+            sender.sendMessage("§7Note: Player is on the whitelist, but manual scan is proceeding.");
+        }
+
+        runDetectionBatch(target, 0);
+        return true;
     }
 
     public void handlePlayerJoin(Player player) {
@@ -75,6 +114,7 @@ public class CheckManager {
     }
 
     public void handlePlayerQuit(Player player) {
+        scanInitiators.remove(player.getUniqueId());
         CheckData check = checkingPlayers.remove(player.getUniqueId());
         if (check != null && check.getTimeoutTask() != null) {
             check.getTimeoutTask().cancel();
@@ -82,6 +122,7 @@ public class CheckManager {
     }
 
     public void cancelAllChecks() {
+        scanInitiators.clear();
         for (CheckData check : checkingPlayers.values()) {
             if (check.getTimeoutTask() != null) {
                 check.getTimeoutTask().cancel();
@@ -101,6 +142,12 @@ public class CheckManager {
     public void runDetectionBatch(Player player, int startIndex) {
         List<TranslationCheckItem> checkQueue = configManager.getCheckQueue();
         if (startIndex >= checkQueue.size()) {
+            CommandSender initiator = scanInitiators.remove(player.getUniqueId());
+            if (initiator != null) {
+                if (!(initiator instanceof Player) || ((Player) initiator).isOnline()) {
+                    initiator.sendMessage("§a[KVC] Scan completed for §e" + player.getName() + "§a: No disallowed modifications detected.");
+                }
+            }
             return; // Finished checking all keys
         }
 
@@ -162,8 +209,15 @@ public class CheckManager {
         BukkitTask timeoutTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             CheckData staleData = checkingPlayers.remove(player.getUniqueId());
             if (staleData != null) {
+                CommandSender initiator = scanInitiators.remove(player.getUniqueId());
                 // an den apantisei se 3 deuterolepta, mallon to kovei to cheat
                 plugin.getLogger().warning("[KVC] FLAG: " + player.getName() + " blocked sign update. Possible cheat.");
+
+                if (initiator != null && !configManager.isKickOnBlockedCheck()) {
+                    if (!(initiator instanceof Player) || ((Player) initiator).isOnline()) {
+                        initiator.sendMessage("§c[KVC] Scan for §e" + player.getName() + "§c: Blocked sign update (possible cheat).");
+                    }
+                }
 
                 if (configManager.isKickOnBlockedCheck()) {
                     enforceAction(player, "Blocked check", false);
@@ -284,6 +338,7 @@ public class CheckManager {
     }
 
     public void enforceAction(Player player, String modName, boolean isMissingRequired) {
+        scanInitiators.remove(player.getUniqueId());
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
 

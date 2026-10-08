@@ -29,7 +29,7 @@ public class WhitelistCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            sender.sendMessage("§cUsage: /kvc-whitelist <add|remove|list> [player]");
+            sender.sendMessage("§cUsage: /" + label + " <add|remove|list> [player]");
             return true;
         }
 
@@ -50,7 +50,7 @@ public class WhitelistCommand implements CommandExecutor, TabCompleter {
         // prosthiki sto whitelist
         if (sub.equals("add")) {
             if (args.length < 2) {
-                sender.sendMessage("§cUsage: /kvc-whitelist add <player>");
+                sender.sendMessage("§cUsage: /" + label + " add <player>");
                 return true;
             }
             String targetName = args[1];
@@ -66,7 +66,7 @@ public class WhitelistCommand implements CommandExecutor, TabCompleter {
         // afairesi apo to whitelist
         if (sub.equals("remove")) {
             if (args.length < 2) {
-                sender.sendMessage("§cUsage: /kvc-whitelist remove <player>");
+                sender.sendMessage("§cUsage: /" + label + " remove <player>");
                 return true;
             }
             String targetName = args[1];
