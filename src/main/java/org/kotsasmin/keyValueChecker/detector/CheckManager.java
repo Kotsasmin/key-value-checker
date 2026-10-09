@@ -140,6 +140,25 @@ public class CheckManager {
         }
     }
 
+    public void handlePlayerChangedWorld(Player player) {
+        if (checkingPlayers.isEmpty()) return;
+        CheckData check = checkingPlayers.remove(player.getUniqueId());
+        if (check != null) {
+            if (check.getTimeoutTask() != null) {
+                check.getTimeoutTask().cancel();
+            }
+            clearFakeBlock(player, check.getSignLoc());
+
+            // An o paiktis allakse kosmo enw ginotan scan (p.x. Multiverse teleport sto spawn),
+            // perimenoume 20 ticks (1 sec) na ginei load o neos kosmos sto client kai ksanatrexoume to scan
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (player.isOnline()) {
+                    runDetectionBatch(player, check.getStartIndex());
+                }
+            }, 20L);
+        }
+    }
+
     public void cancelAllChecks() {
         scanInitiators.clear();
         quarantineManager.releaseAll();
