@@ -82,6 +82,7 @@ public class KvcCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         configManager.loadConfigValues();
+        checkManager.handleConfigReload();
         sender.sendMessage("§a[KVC] Configuration reloaded successfully.");
         return true;
     }

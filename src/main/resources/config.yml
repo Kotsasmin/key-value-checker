@@ -1,4 +1,4 @@
-config-version: 4
+config-version: 5
 # Whether to automatically check players when they join the server.
 # Set to false if you only want to use manual scanning (/kvc scan <player>).
 check-on-join: true
@@ -9,7 +9,7 @@ kick-on-blocked-check: true
 # Quarantine player in place during initial join verification (manual scans always remain silent)
 quarantine:
   enabled: true
-  sensory-blackout: true
+  sensory-blackout: false
   title: ""
   subtitle: ""
   blocked-command-message: "&cCommands are disabled while your client is being verified."

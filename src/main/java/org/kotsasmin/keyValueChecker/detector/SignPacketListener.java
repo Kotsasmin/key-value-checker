@@ -27,6 +27,7 @@ public class SignPacketListener extends PacketListenerAbstract {
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
         if (event.getPacketType() == PacketType.Play.Client.UPDATE_SIGN) {
+            if (!(event.getPlayer() instanceof Player)) return;
             Player player = (Player) event.getPlayer();
             CheckData check = checkManager.getActiveCheck(player.getUniqueId());
 
@@ -36,7 +37,9 @@ public class SignPacketListener extends PacketListenerAbstract {
             if (updateSign.getBlockPosition().equals(check.getSignLoc())) {
                 // Cancel the vanilla server processing to bypass "non-editable" warnings
                 event.setCancelled(true);
-                checkManager.removeActiveCheck(player.getUniqueId());
+                if (checkManager.removeActiveCheck(player.getUniqueId()) == null) {
+                    return; // Already handled by timeout task
+                }
                 if (check.getTimeoutTask() != null) {
                     check.getTimeoutTask().cancel();
                 }

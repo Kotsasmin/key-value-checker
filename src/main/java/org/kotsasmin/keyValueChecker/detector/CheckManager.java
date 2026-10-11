@@ -20,6 +20,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -31,13 +32,17 @@ import org.kotsasmin.keyValueChecker.data.TranslationCheckItem;
 import org.kotsasmin.keyValueChecker.quarantine.QuarantineManager;
 import org.kotsasmin.keyValueChecker.webhook.DiscordWebhookNotifier;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CheckManager {
+    private static final long SCAN_COOLDOWN_MS = 10_000L; // 10 seconds cooldown metaksy manual scans ston idio paikti
+
     private final JavaPlugin plugin;
     private final ConfigManager configManager;
     private final DataManager dataManager;
@@ -45,7 +50,15 @@ public class CheckManager {
     private final QuarantineManager quarantineManager;
 
     private final Map<UUID, CheckData> checkingPlayers = new ConcurrentHashMap<>();
+    private final Set<UUID> activeScanSessions = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Long> lastScanTimestamps = new ConcurrentHashMap<>();
     private final Map<UUID, CommandSender> scanInitiators = new ConcurrentHashMap<>();
+
+    // Cached reflection gia Floodgate & Geyser wste na mhn kanei Class.forName se kathe join/scan
+    private Method floodgateGetInstance;
+    private Method floodgateIsPlayer;
+    private Method geyserApiMethod;
+    private Method geyserIsBedrockPlayer;
 
     public CheckManager(JavaPlugin plugin, ConfigManager configManager, DataManager dataManager, DiscordWebhookNotifier webhookNotifier, QuarantineManager quarantineManager) {
         this.plugin = plugin;
@@ -53,30 +66,59 @@ public class CheckManager {
         this.dataManager = dataManager;
         this.webhookNotifier = webhookNotifier;
         this.quarantineManager = quarantineManager;
+        initBedrockReflection();
+    }
+
+    private void initBedrockReflection() {
+        try {
+            Class<?> floodgateApiClass = Class.forName("org.geysermc.floodgate.api.FloodgateApi");
+            floodgateGetInstance = floodgateApiClass.getMethod("getInstance");
+            floodgateIsPlayer = floodgateApiClass.getMethod("isFloodgatePlayer", UUID.class);
+        } catch (Throwable ignored) {}
+
+        try {
+            Class<?> geyserApiClass = Class.forName("org.geysermc.geyser.api.GeyserApi");
+            geyserApiMethod = geyserApiClass.getMethod("api");
+            geyserIsBedrockPlayer = geyserApiClass.getMethod("isBedrockPlayer", UUID.class);
+        } catch (Throwable ignored) {}
     }
 
     public boolean scanPlayer(CommandSender sender, Player target) {
         if (!target.isOnline()) {
             sender.sendMessage("§cPlayer §e" + target.getName() + " §cis not online.");
-            return false;
+            return true;
         }
 
-        if (isBedrockPlayer(target.getUniqueId())) {
+        UUID targetUuid = target.getUniqueId();
+
+        if (isBedrockPlayer(targetUuid)) {
             sender.sendMessage("§cCannot scan §e" + target.getName() + " §c(Bedrock players do not have Java translation keys).");
-            return false;
+            return true;
         }
 
         if (configManager.getCheckQueue().isEmpty()) {
             sender.sendMessage("§cNo translation check keys are loaded or enabled in configuration.");
-            return false;
+            return true;
         }
 
-        if (getActiveCheck(target.getUniqueId()) != null) {
-            sender.sendMessage("§cPlayer §e" + target.getName() + " §cis already being scanned.");
-            return false;
+        // Elegxos an o paiktis einai HDH se active scan session (join delay, metaksy batches, world change, ktl)
+        if (activeScanSessions.contains(targetUuid) || getActiveCheck(targetUuid) != null) {
+            sender.sendMessage("§c[KVC] Player §e" + target.getName() + " §cis already being scanned! Please wait for it to finish.");
+            return true;
         }
 
-        scanInitiators.put(target.getUniqueId(), sender);
+        // Cooldown protection gia na mhn kanoun spam oi admins to /kvc scan kai kollaei to GUI tou paikti
+        Long lastScan = lastScanTimestamps.get(targetUuid);
+        long now = System.currentTimeMillis();
+        if (lastScan != null && (now - lastScan) < SCAN_COOLDOWN_MS) {
+            long remainingSec = Math.max(1L, (SCAN_COOLDOWN_MS - (now - lastScan) + 999L) / 1000L);
+            sender.sendMessage("§c[KVC] Please wait §e" + remainingSec + "s §cbefore scanning §e" + target.getName() + " §cagain.");
+            return true;
+        }
+
+        activeScanSessions.add(targetUuid);
+        lastScanTimestamps.put(targetUuid, now);
+        scanInitiators.put(targetUuid, sender);
 
         ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(target);
         String verStr = (clientVersion != null && clientVersion != ClientVersion.UNKNOWN) ? clientVersion.getReleaseName() : "unknown";
@@ -105,8 +147,10 @@ public class CheckManager {
             return;
         }
 
+        UUID uuid = player.getUniqueId();
+
         // skip gia bedrock / floodgate giati den exoun ta java translations
-        if (isBedrockPlayer(player.getUniqueId())) {
+        if (isBedrockPlayer(uuid)) {
             plugin.getLogger().info("[KVC] Skipped check for Bedrock player: " + player.getName());
             return;
         }
@@ -115,6 +159,9 @@ public class CheckManager {
             return;
         }
 
+        // Kleidwnoume to scan session apo to tick 0 wste na mhn mporei admin na kanei /kvc scan panw sto join delay
+        activeScanSessions.add(uuid);
+
         // Freeze and isolate player during check if quarantine is enabled
         if (configManager.isQuarantineEnabled()) {
             quarantineManager.quarantinePlayer(player);
@@ -122,19 +169,26 @@ public class CheckManager {
 
         // perimenoume ligo delay prin ksekinisei to check
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (player.isOnline() && !configManager.getCheckQueue().isEmpty()) {
+            if (player.isOnline() && !configManager.getCheckQueue().isEmpty() && activeScanSessions.contains(uuid)) {
                 ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
                 String verStr = (clientVersion != null && clientVersion != ClientVersion.UNKNOWN) ? clientVersion.getReleaseName() : "unknown";
                 plugin.getLogger().info("[KVC] Starting check for player: " + player.getName() + " (Client: " + verStr + ")");
                 runDetectionBatch(player, 0);
+            } else {
+                // An o paiktis vgike h adeiasane ta keys sto reload, eleftherwnoume amesws to quarantine!
+                activeScanSessions.remove(uuid);
+                quarantineManager.releasePlayer(player, false);
             }
         }, configManager.getSendDelayTicks());
     }
 
     public void handlePlayerQuit(Player player) {
-        scanInitiators.remove(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        activeScanSessions.remove(uuid);
+        lastScanTimestamps.remove(uuid);
+        scanInitiators.remove(uuid);
         quarantineManager.cleanupPlayer(player);
-        CheckData check = checkingPlayers.remove(player.getUniqueId());
+        CheckData check = checkingPlayers.remove(uuid);
         if (check != null && check.getTimeoutTask() != null) {
             check.getTimeoutTask().cancel();
         }
@@ -142,24 +196,29 @@ public class CheckManager {
 
     public void handlePlayerChangedWorld(Player player) {
         if (checkingPlayers.isEmpty()) return;
-        CheckData check = checkingPlayers.remove(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        CheckData check = checkingPlayers.remove(uuid);
         if (check != null) {
             if (check.getTimeoutTask() != null) {
                 check.getTimeoutTask().cancel();
             }
-            clearFakeBlock(player, check.getSignLoc());
 
             // An o paiktis allakse kosmo enw ginotan scan (p.x. Multiverse teleport sto spawn),
             // perimenoume 20 ticks (1 sec) na ginei load o neos kosmos sto client kai ksanatrexoume to scan
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline()) {
+                if (player.isOnline() && activeScanSessions.contains(uuid)) {
                     runDetectionBatch(player, check.getStartIndex());
+                } else {
+                    activeScanSessions.remove(uuid);
+                    quarantineManager.releasePlayer(player, false);
                 }
             }, 20L);
         }
     }
 
     public void cancelAllChecks() {
+        activeScanSessions.clear();
+        lastScanTimestamps.clear();
         scanInitiators.clear();
         quarantineManager.releaseAll();
         for (CheckData check : checkingPlayers.values()) {
@@ -168,6 +227,14 @@ public class CheckManager {
             }
         }
         checkingPlayers.clear();
+    }
+
+    public void handleConfigReload() {
+        if (configManager.getCheckQueue().isEmpty()) {
+            cancelAllChecks();
+        } else {
+            quarantineManager.handleConfigReload();
+        }
     }
 
     public CheckData getActiveCheck(UUID uuid) {
@@ -179,9 +246,23 @@ public class CheckManager {
     }
 
     public void runDetectionBatch(Player player, int startIndex) {
+        UUID uuid = player.getUniqueId();
+        if (!player.isOnline()) {
+            activeScanSessions.remove(uuid);
+            return;
+        }
+
+        // Cancel any previous leftover timeout task before starting a new batch
+        CheckData previousCheck = checkingPlayers.remove(uuid);
+        if (previousCheck != null && previousCheck.getTimeoutTask() != null) {
+            previousCheck.getTimeoutTask().cancel();
+        }
+
         List<TranslationCheckItem> checkQueue = configManager.getCheckQueue();
         if (startIndex >= checkQueue.size()) {
-            CommandSender initiator = scanInitiators.remove(player.getUniqueId());
+            activeScanSessions.remove(uuid);
+            lastScanTimestamps.put(uuid, System.currentTimeMillis());
+            CommandSender initiator = scanInitiators.remove(uuid);
             if (initiator != null) {
                 if (!(initiator instanceof Player) || ((Player) initiator).isOnline()) {
                     initiator.sendMessage("§a[KVC] Scan completed for §e" + player.getName() + "§a: No disallowed modifications detected.");
@@ -191,11 +272,14 @@ public class CheckManager {
             return; // Finished checking all keys
         }
 
-        // Place sign above head to guarantee loaded chunk
-        Location loc = player.getLocation().clone();
-        loc.setY(0);
+        // Place fake sign at player's actual Y position (clamped to world bounds) to guarantee chunk is loaded and within reach
+        Location loc = player.getLocation();
+        World world = loc.getWorld();
+        int minY = world != null ? world.getMinHeight() : 0;
+        int maxY = world != null ? (world.getMaxHeight() - 1) : 255;
+        int signY = Math.max(minY, Math.min(maxY, loc.getBlockY()));
 
-        Vector3i v3i = new Vector3i(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+        Vector3i v3i = new Vector3i(loc.getBlockX(), signY, loc.getBlockZ());
 
         // 1 - Send Fake Sign Block Change
         int signStateId = WrappedBlockState.getByString(Material.OAK_SIGN.createBlockData().getAsString()).getGlobalId();
@@ -209,7 +293,7 @@ public class CheckManager {
         }
 
         // 2 - Build NBT Data for Sign analoga me to client protocol (1.8-1.19 legacy, 1.20-1.20.4 string list, 1.20.5+ compound list)
-        List<TranslationCheckItem> currentKeys = new ArrayList<>();
+        List<TranslationCheckItem> currentKeys = new ArrayList<>(4);
         for (int i = 0; i < 4; i++) {
             if (startIndex + i < checkQueue.size()) {
                 currentKeys.add(checkQueue.get(startIndex + i));
@@ -242,14 +326,14 @@ public class CheckManager {
             PacketEvents.getAPI().getPlayerManager().sendPacket(player, closeWindow);
         }
 
-        // 7 - Instantly restore the block
+        // 6 - Instantly restore the block
         clearFakeBlock(player, v3i);
 
         // Safety timeout
         BukkitTask timeoutTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            CheckData staleData = checkingPlayers.remove(player.getUniqueId());
+            CheckData staleData = checkingPlayers.remove(uuid);
             if (staleData != null) {
-                CommandSender initiator = scanInitiators.remove(player.getUniqueId());
+                CommandSender initiator = scanInitiators.remove(uuid);
                 // an den apantisei se 3 deuterolepta, mallon to kovei to cheat
                 plugin.getLogger().warning("[KVC] FLAG: " + player.getName() + " blocked sign update. Possible cheat.");
 
@@ -262,7 +346,7 @@ public class CheckManager {
                 if (configManager.isKickOnBlockedCheck()) {
                     enforceAction(player, "Blocked check", false);
                 } else {
-                    PlayerRecord record = dataManager.getOrCreateRecord(player.getUniqueId(), player.getName(), "Blocked check");
+                    PlayerRecord record = dataManager.getOrCreateRecord(uuid, player.getName(), "Blocked check");
                     record.addDetectedMod("Blocked check");
                     record.setLastIncidentTime(System.currentTimeMillis());
                     record.setLastAction("Blocked check");
@@ -288,13 +372,19 @@ public class CheckManager {
                     Bukkit.getScheduler().runTask(plugin, () -> {
                         if (player.isOnline()) {
                             runDetectionBatch(player, staleData.getStartIndex() + 4);
+                        } else {
+                            activeScanSessions.remove(uuid);
                         }
                     });
                 }
             }
         }, 60L);
 
-        checkingPlayers.put(player.getUniqueId(), new CheckData(startIndex, currentKeys, v3i, timeoutTask));
+        checkingPlayers.put(uuid, new CheckData(startIndex, currentKeys, v3i, timeoutTask));
+    }
+
+    private String escapeJson(String input) {
+        return input.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private NBTCompound buildSignNBT(ClientVersion version, List<TranslationCheckItem> currentKeys) {
@@ -307,7 +397,7 @@ public class CheckManager {
                 String tagName = "Text" + (i + 1);
                 TranslationCheckItem item = (i < currentKeys.size()) ? currentKeys.get(i) : null;
                 if (item != null && item.getKey() != null) {
-                    String json = "{\"translate\":\"" + item.getKey() + "\",\"fallback\":\"fallb\"}";
+                    String json = "{\"translate\":\"" + escapeJson(item.getKey()) + "\",\"fallback\":\"fallb\"}";
                     nbt.setTag(tagName, new NBTString(json));
                 } else {
                     nbt.setTag(tagName, new NBTString("{\"text\":\"\"}"));
@@ -322,7 +412,7 @@ public class CheckManager {
             for (int i = 0; i < 4; i++) {
                 TranslationCheckItem item = (i < currentKeys.size()) ? currentKeys.get(i) : null;
                 if (item != null && item.getKey() != null) {
-                    String json = "{\"translate\":\"" + item.getKey() + "\",\"fallback\":\"fallb\"}";
+                    String json = "{\"translate\":\"" + escapeJson(item.getKey()) + "\",\"fallback\":\"fallb\"}";
                     messagesList.add(new NBTString(json));
                 } else {
                     messagesList.add(new NBTString("{\"text\":\"\"}"));
@@ -368,23 +458,31 @@ public class CheckManager {
     }
 
     private void clearFakeBlock(Player player, Vector3i loc) {
-        // epanafora tou kanonikou block sto client
+        // epanafora tou kanonikou block sto client xwris synchronous chunk load
         if (player.isOnline()) {
-            Location bukkitLoc = new Location(player.getWorld(), loc.getX(), loc.getY(), loc.getZ());
-            int globalId = WrappedBlockState.getByString(player.getWorld().getBlockAt(bukkitLoc).getBlockData().getAsString()).getGlobalId();
+            World world = player.getWorld();
+            if (!world.isChunkLoaded(loc.getX() >> 4, loc.getZ() >> 4)) {
+                return;
+            }
+            Location bukkitLoc = new Location(world, loc.getX(), loc.getY(), loc.getZ());
+            int globalId = WrappedBlockState.getByString(world.getBlockAt(bukkitLoc).getBlockData().getAsString()).getGlobalId();
             WrapperPlayServerBlockChange restore = new WrapperPlayServerBlockChange(loc, globalId);
             PacketEvents.getAPI().getPlayerManager().sendPacket(player, restore);
         }
     }
 
     public void enforceAction(Player player, String modName, boolean isMissingRequired) {
-        scanInitiators.remove(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        String playerName = player.getName();
+        activeScanSessions.remove(uuid);
+        lastScanTimestamps.put(uuid, System.currentTimeMillis());
+        CommandSender initiator = scanInitiators.remove(uuid);
         quarantineManager.releasePlayer(player, false);
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (!player.isOnline()) return;
 
+        // Save detection & send webhooks/alerts on main thread IMMEDIATELY so a disconnect within 5 ticks never drops the log
+        Bukkit.getScheduler().runTask(plugin, () -> {
             String actionLabel = isMissingRequired ? "Missing Required Mod" : "Kicked";
-            PlayerRecord record = dataManager.getOrCreateRecord(player.getUniqueId(), player.getName(), actionLabel);
+            PlayerRecord record = dataManager.getOrCreateRecord(uuid, playerName, actionLabel);
             record.setLastAction(actionLabel);
             record.setLastIncidentTime(System.currentTimeMillis());
             dataManager.saveData(true);
@@ -394,6 +492,26 @@ public class CheckManager {
                 webhookNotifier.sendWebhook(player, webhookAction, String.join(", ", record.getDetectedMods()));
             }
 
+            if (initiator != null && (!(initiator instanceof Player) || ((Player) initiator).isOnline())) {
+                initiator.sendMessage("§c[KVC] Scan flagged §e" + playerName + " §cfor: §e" + modName);
+            }
+
+            // Notify admins in-game
+            String alertFormat = configManager.getAdminAlertFormat(isMissingRequired);
+            if (alertFormat != null && !alertFormat.isEmpty()) {
+                String formattedAlert = alertFormat.replace("%player%", playerName).replace("%mod%", modName);
+                Component adminAlert = LegacyComponentSerializer.legacyAmpersand().deserialize(formattedAlert);
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    if (p.hasPermission("keyvaluechecker.notify")) {
+                        p.sendMessage(adminAlert);
+                    }
+                }
+            }
+        });
+
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) return;
+
             String actionType = configManager.getActionType(isMissingRequired);
             List<String> content = configManager.getActionContent(isMissingRequired);
 
@@ -401,7 +519,7 @@ public class CheckManager {
 
             Component finalMessage = Component.empty();
             for (String line : content) {
-                String formatted = line.replace("%mod%", modName).replace("%player%", player.getName());
+                String formatted = line.replace("%mod%", modName).replace("%player%", playerName);
                 if (!finalMessage.equals(Component.empty())) {
                     finalMessage = finalMessage.append(Component.newline());
                 }
@@ -412,43 +530,32 @@ public class CheckManager {
                 player.sendMessage(finalMessage);
             } else if ("command".equalsIgnoreCase(actionType)) {
                 for (String line : content) {
-                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), line.replace("%mod%", modName).replace("%player%", player.getName()));
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), line.replace("%mod%", modName).replace("%player%", playerName));
                 }
             } else {
                 player.kick(finalMessage);
-            }
-
-            // Notify admins in-game
-            String alertFormat = configManager.getAdminAlertFormat(isMissingRequired);
-            if (alertFormat != null && !alertFormat.isEmpty()) {
-                String formattedAlert = alertFormat.replace("%player%", player.getName()).replace("%mod%", modName);
-                Component adminAlert = LegacyComponentSerializer.legacyAmpersand().deserialize(formattedAlert);
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    if (p.hasPermission("keyvaluechecker.notify")) {
-                        p.sendMessage(adminAlert);
-                    }
-                }
             }
         }, 5L);
     }
 
     private boolean isBedrockPlayer(UUID uuid) {
-        // elegxos me reflection gia floodgate/geyser xwris hard dependency
-        try {
-            Class<?> floodgateApiClass = Class.forName("org.geysermc.floodgate.api.FloodgateApi");
-            Object api = floodgateApiClass.getMethod("getInstance").invoke(null);
-            if ((boolean) floodgateApiClass.getMethod("isFloodgatePlayer", UUID.class).invoke(api, uuid)) {
-                return true;
-            }
-        } catch (Exception ignored) {}
+        if (floodgateGetInstance != null && floodgateIsPlayer != null) {
+            try {
+                Object api = floodgateGetInstance.invoke(null);
+                if (api != null && (boolean) floodgateIsPlayer.invoke(api, uuid)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+        }
 
-        try {
-            Class<?> geyserApiClass = Class.forName("org.geysermc.geyser.api.GeyserApi");
-            Object api = geyserApiClass.getMethod("api").invoke(null);
-            if ((boolean) geyserApiClass.getMethod("isBedrockPlayer", UUID.class).invoke(api, uuid)) {
-                return true;
-            }
-        } catch (Exception ignored) {}
+        if (geyserApiMethod != null && geyserIsBedrockPlayer != null) {
+            try {
+                Object api = geyserApiMethod.invoke(null);
+                if (api != null && (boolean) geyserIsBedrockPlayer.invoke(api, uuid)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+        }
 
         // Fallback check for default Floodgate UUID format
         return uuid.toString().startsWith("00000000-0000-0000-");

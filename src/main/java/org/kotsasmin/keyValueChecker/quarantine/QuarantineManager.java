@@ -104,8 +104,10 @@ public class QuarantineManager implements Listener {
                 player.setInvulnerable(false);
             }
 
-            // Panta katharizoume ta effects an o paiktis eixe parei blindness apo to KVC
-            forceClearEffects(player);
+            // Panta katharizoume ta effects an o paiktis eixe parei blindness apo to KVC h an vrethike me KVC blindness
+            if (wasQuarantined || kvcBlindnessApplied.containsKey(player.getUniqueId()) || hasKvcBlindnessSignature(player)) {
+                forceClearEffects(player);
+            }
 
             player.clearTitle();
 
@@ -137,11 +139,37 @@ public class QuarantineManager implements Listener {
         }
     }
 
+    public void handleConfigReload() {
+        if (!configManager.isQuarantineEnabled()) {
+            releaseAll();
+        } else if (!configManager.isQuarantineSensoryBlackout()) {
+            for (UUID uuid : quarantined) {
+                Player p = Bukkit.getPlayer(uuid);
+                if (p != null && p.isOnline()) {
+                    forceClearEffects(p);
+                }
+            }
+        }
+    }
+
+    public boolean hasKvcBlindnessSignature(Player player) {
+        if (!player.isOnline()) return false;
+        PotionEffect effect = player.getPotionEffect(PotionEffectType.BLINDNESS);
+        if (effect == null) return false;
+        // KVC applies Blindness with amplifier=1, ambient=false, particles=false, icon=false
+        return effect.getAmplifier() == 1 && !effect.isAmbient() && !effect.hasParticles() && !effect.hasIcon();
+    }
+
     public void forceClearEffects(Player player) {
         UUID uuid = player.getUniqueId();
-        if (!kvcBlindnessApplied.containsKey(uuid)) return;
+        Long appliedAt = kvcBlindnessApplied.get(uuid);
+        boolean hasSignature = hasKvcBlindnessSignature(player);
+
+        if (appliedAt == null && !hasSignature) return;
         if (!player.isOnline()) {
-            kvcBlindnessApplied.remove(uuid);
+            if (appliedAt != null) {
+                kvcBlindnessApplied.remove(uuid, appliedAt);
+            }
             return;
         }
 
@@ -166,10 +194,19 @@ public class QuarantineManager implements Listener {
             }
         }, 12L);
 
-        // Katharizoume to tracking map meta apo 15 sec (oso to max duration tou effect) gia na mhn kratietai mnhmh
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            kvcBlindnessApplied.remove(uuid);
-        }, 300L);
+            if (player.isOnline() && !isQuarantined(uuid)) {
+                clearBukkitEffects(player);
+                sendPacketEventsClear(player);
+            }
+        }, 25L);
+
+        // Atomic cleanup me to exact timestamp wste palia tasks na MHN svinoun neo scan entry!
+        if (appliedAt != null) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                kvcBlindnessApplied.remove(uuid, appliedAt);
+            }, 300L);
+        }
     }
 
     private void clearBukkitEffects(Player player) {
@@ -222,36 +259,28 @@ public class QuarantineManager implements Listener {
                 player.setInvulnerable(false);
             }
         }
+        // Self-heal an o paiktis eixe apothikeumeno KVC blindness apo proigoumeno session/disconnect
+        if ((!configManager.isQuarantineEnabled() || !configManager.isQuarantineSensoryBlackout() || !isQuarantined(player.getUniqueId()))
+                && hasKvcBlindnessSignature(player)) {
+            forceClearEffects(player);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
-        if (!configManager.isQuarantineEnabled() || kvcBlindnessApplied.isEmpty()) return;
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
-        if (isQuarantined(uuid)) {
-            // An akoma ginetai scan sto neo kosmo kai exei sensory blackout,
-            // refresh to effect sto client meta to world load
-            if (configManager.isQuarantineSensoryBlackout()) {
-                Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    if (player.isOnline() && isQuarantined(uuid)) {
-                        player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 15, 1, false, false, false));
-                    }
-                }, 5L);
-            }
-        } else if (kvcBlindnessApplied.containsKey(uuid)) {
-            // An to scan teleiwse kai o paiktis metaferthike sto Multiverse,
-            // katharizoume to blindness amesws
+        if (!isQuarantined(uuid) && (kvcBlindnessApplied.containsKey(uuid) || hasKvcBlindnessSignature(player))) {
+            // An to scan teleiwse kai o paiktis metaferthike sto Multiverse, katharizoume to blindness amesws
             forceClearEffects(player);
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerTeleport(PlayerTeleportEvent event) {
-        if (!configManager.isQuarantineEnabled() || kvcBlindnessApplied.isEmpty()) return;
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
-        if (!isQuarantined(uuid) && kvcBlindnessApplied.containsKey(uuid)) {
+        if (!isQuarantined(uuid) && (kvcBlindnessApplied.containsKey(uuid) || hasKvcBlindnessSignature(player))) {
             forceClearEffects(player);
         }
     }
